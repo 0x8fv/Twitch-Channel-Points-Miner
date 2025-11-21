@@ -40,6 +40,7 @@ type config struct {
 	ShowUsernameInConsole      bool      `json:"show_username_in_console"`
 	ShowClaimedBonusMsg        bool      `json:"show_claimed_bonus_msg"`
 	Streamers                  []string  `json:"streamers"`
+	WatchPriority              []string  `json:"watch_priority"`
 	Bet                        betConfig `json:"bet"`
 }
 
@@ -81,6 +82,11 @@ func defaultConfig() map[string]interface{} {
 		"show_username_in_console":      false,
 		"show_claimed_bonus_msg":        true,
 		"streamers":                     []interface{}{},
+		"watch_priority": []interface{}{
+			"STREAK",
+			"DROPS",
+			"ORDER",
+		},
 		"bet": map[string]interface{}{
 			"strategy":       nil,
 			"percentage":     nil,
@@ -195,6 +201,7 @@ func main() {
 		cfg.DisableSSLCertVerification,
 		loggerSettings,
 		streamerSettings,
+		cfg.WatchPriority,
 	)
 
 	if len(cfg.Streamers) > 0 {

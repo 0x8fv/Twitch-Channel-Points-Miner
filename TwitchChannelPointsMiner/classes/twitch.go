@@ -185,6 +185,17 @@ func (t *Twitch) LoadChannelPointsContext(streamer *entities.Streamer) (int, err
 	pointsData, _ := self.(map[string]interface{})
 	balance := int(fromFloat(pointsData["balance"]))
 	streamer.ChannelPoints = balance
+	if active, ok := pointsData["activeMultipliers"].([]interface{}); ok {
+		multipliers := make([]map[string]interface{}, 0, len(active))
+		for _, item := range active {
+			if m, ok := item.(map[string]interface{}); ok {
+				multipliers = append(multipliers, m)
+			}
+		}
+		streamer.ActiveMultipliers = multipliers
+	} else {
+		streamer.ActiveMultipliers = nil
+	}
 	if available := navigate(resp, "data.community.channel.self.communityPoints.availableClaim"); available != nil {
 		if claimID, ok := navigate(available, "id").(string); ok && claimID != "" {
 			_ = t.ClaimBonus(streamer, claimID)

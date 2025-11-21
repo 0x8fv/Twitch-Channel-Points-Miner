@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -22,6 +23,63 @@ const (
 	colorReset = "\033[0m"
 )
 
+type watchPriority int
+
+const (
+	watchPriorityOrder watchPriority = iota
+	watchPriorityStreak
+	watchPriorityDrops
+	watchPrioritySubscribed
+	watchPriorityPointsAscending
+	watchPriorityPointsDescending
+)
+
+const maxConcurrentWatchers = 2
+
+func defaultWatchPriorities() []watchPriority {
+	return []watchPriority{
+		watchPriorityStreak,
+		watchPriorityDrops,
+		watchPriorityOrder,
+	}
+}
+
+func parseWatchPriorities(priorityNames []string) []watchPriority {
+	if len(priorityNames) == 0 {
+		return defaultWatchPriorities()
+	}
+	seen := make(map[watchPriority]struct{})
+	parsed := make([]watchPriority, 0, len(priorityNames))
+	add := func(p watchPriority) {
+		if _, ok := seen[p]; ok {
+			return
+		}
+		seen[p] = struct{}{}
+		parsed = append(parsed, p)
+	}
+	for _, raw := range priorityNames {
+		name := strings.ToUpper(strings.TrimSpace(raw))
+		switch name {
+		case "ORDER":
+			add(watchPriorityOrder)
+		case "STREAK":
+			add(watchPriorityStreak)
+		case "DROPS":
+			add(watchPriorityDrops)
+		case "SUBSCRIBED", "SUBS", "MULTIPLIER":
+			add(watchPrioritySubscribed)
+		case "POINTS_ASC", "POINTS_ASCENDING":
+			add(watchPriorityPointsAscending)
+		case "POINTS_DESC", "POINTS_DESCENDING":
+			add(watchPriorityPointsDescending)
+		}
+	}
+	if len(parsed) == 0 {
+		return defaultWatchPriorities()
+	}
+	return parsed
+}
+
 type Miner struct {
 	Username                   string
 	Password                   string
@@ -35,9 +93,10 @@ type Miner struct {
 	streamers                  []*entities.Streamer
 	initialPoints              map[string]int
 	stop                       chan struct{}
+	watchPriorities            []watchPriority
 }
 
-func NewMiner(username, password string, claimDropsStartup bool, disableCertCheck bool, loggerSettings LoggerSettings, streamerSettings entities.StreamerSettings) *Miner {
+func NewMiner(username, password string, claimDropsStartup bool, disableCertCheck bool, loggerSettings LoggerSettings, streamerSettings entities.StreamerSettings, priorityNames []string) *Miner {
 	streamerSettings.Default()
 	return &Miner{
 		Username:                   username,
@@ -47,6 +106,7 @@ func NewMiner(username, password string, claimDropsStartup bool, disableCertChec
 		LoggerSettings:             loggerSettings,
 		StreamerSettings:           streamerSettings,
 		logger:                     NewLogger(loggerSettings, username),
+		watchPriorities:            parseWatchPriorities(priorityNames),
 	}
 }
 
@@ -198,29 +258,192 @@ func (m *Miner) contextRefresher(streamers []*entities.Streamer, stop <-chan str
 }
 
 func (m *Miner) minuteWatcher(streamers []*entities.Streamer, stop <-chan struct{}) {
-	ticker := time.NewTicker(60 * time.Second)
-	defer ticker.Stop()
 	for {
 		select {
-		case <-ticker.C:
-			watched := 0
-			for _, s := range streamers {
-				if watched >= 2 {
-					break
-				}
-				if !s.IsOnline {
-					continue
-				}
-				if err := m.twitch.SendMinuteWatched(s); err != nil {
-					m.logger.Printf("minute watch %s: %v", s.Username, err)
-					continue
-				}
-				watched++
-			}
 		case <-stop:
 			return
+		default:
+		}
+
+		watchList := m.pickStreamersToWatch(streamers)
+		if len(watchList) == 0 {
+			if m.sleepWithStop(20*time.Second, stop) {
+				return
+			}
+			continue
+		}
+
+		interval := m.watchInterval(len(watchList))
+		for _, streamer := range watchList {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+
+			if streamer.Stream != nil && streamer.Stream.LastUpdateAgo() > 10*time.Minute {
+				if _, err := m.twitch.CheckStreamerOnline(streamer); err != nil {
+					m.logger.Printf("online check %s: %v", streamer.Username, err)
+				}
+				if !streamer.IsOnline {
+					continue
+				}
+			}
+
+			if err := m.twitch.SendMinuteWatched(streamer); err != nil {
+				m.logger.Printf("minute watch %s: %v", streamer.Username, err)
+			}
+
+			if m.sleepWithStop(interval, stop) {
+				return
+			}
 		}
 	}
+}
+
+func (m *Miner) pickStreamersToWatch(streamers []*entities.Streamer) []*entities.Streamer {
+	now := time.Now()
+	candidates := make([]int, 0, len(streamers))
+	for idx, s := range streamers {
+		if s == nil || !s.IsOnline {
+			continue
+		}
+		if !s.OnlineAt.IsZero() && now.Sub(s.OnlineAt) < 30*time.Second {
+			continue
+		}
+		candidates = append(candidates, idx)
+	}
+
+	selected := make([]int, 0, maxConcurrentWatchers)
+	seen := make(map[int]struct{})
+	add := func(idx int) {
+		if len(selected) >= maxConcurrentWatchers {
+			return
+		}
+		if _, ok := seen[idx]; ok {
+			return
+		}
+		seen[idx] = struct{}{}
+		selected = append(selected, idx)
+	}
+
+	pick := func(indices []int) {
+		for _, idx := range indices {
+			add(idx)
+			if len(selected) >= maxConcurrentWatchers {
+				break
+			}
+		}
+	}
+
+	for _, priority := range m.watchPriorities {
+		if len(selected) >= maxConcurrentWatchers {
+			break
+		}
+		switch priority {
+		case watchPriorityOrder:
+			pick(candidates)
+		case watchPriorityStreak:
+			streaks := make([]int, 0, len(candidates))
+			for _, idx := range candidates {
+				if m.shouldPrioritizeStreak(streamers[idx], now) {
+					streaks = append(streaks, idx)
+				}
+			}
+			pick(streaks)
+		case watchPriorityDrops:
+			drops := make([]int, 0, len(candidates))
+			for _, idx := range candidates {
+				s := streamers[idx]
+				if s == nil || s.Stream == nil {
+					continue
+				}
+				if s.Settings.ClaimDrops && len(s.Stream.CampaignIDs) > 0 {
+					drops = append(drops, idx)
+				}
+			}
+			pick(drops)
+		case watchPrioritySubscribed:
+			subscribed := append([]int(nil), candidates...)
+			sort.SliceStable(subscribed, func(i, j int) bool {
+				return streamers[subscribed[i]].TotalMultiplier() > streamers[subscribed[j]].TotalMultiplier()
+			})
+			pick(subscribed)
+		case watchPriorityPointsAscending:
+			asc := append([]int(nil), candidates...)
+			sort.SliceStable(asc, func(i, j int) bool {
+				return streamers[asc[i]].ChannelPoints < streamers[asc[j]].ChannelPoints
+			})
+			pick(asc)
+		case watchPriorityPointsDescending:
+			desc := append([]int(nil), candidates...)
+			sort.SliceStable(desc, func(i, j int) bool {
+				return streamers[desc[i]].ChannelPoints > streamers[desc[j]].ChannelPoints
+			})
+			pick(desc)
+		}
+	}
+
+	if len(selected) < maxConcurrentWatchers {
+		pick(candidates)
+	}
+
+	watchList := make([]*entities.Streamer, 0, len(selected))
+	for _, idx := range selected {
+		watchList = append(watchList, streamers[idx])
+	}
+	return watchList
+}
+
+func (m *Miner) shouldPrioritizeStreak(streamer *entities.Streamer, now time.Time) bool {
+	if streamer == nil || streamer.Stream == nil {
+		return false
+	}
+	if !streamer.Settings.WatchStreak || !streamer.Stream.WatchStreakMissing {
+		return false
+	}
+	if !streamer.OfflineAt.IsZero() && now.Sub(streamer.OfflineAt) <= 30*time.Minute {
+		return false
+	}
+	return streamer.Stream.MinuteWatched < 7
+}
+
+func (m *Miner) watchInterval(count int) time.Duration {
+	if count <= 0 {
+		return 20 * time.Second
+	}
+	interval := time.Duration(float64(20*time.Second) / float64(count))
+	if interval < 5*time.Second {
+		return 5 * time.Second
+	}
+	return interval
+}
+
+func (m *Miner) sleepWithStop(duration time.Duration, stop <-chan struct{}) bool {
+	if duration <= 0 {
+		return false
+	}
+	const chunks = 3
+	step := duration / chunks
+	if step <= 0 {
+		step = duration
+	}
+	elapsed := time.Duration(0)
+	for elapsed < duration {
+		remaining := duration - elapsed
+		if remaining < step {
+			step = remaining
+		}
+		timer := time.NewTimer(step)
+		select {
+		case <-stop:
+			timer.Stop()
+			return true
+		case <-timer.C:
+		}
+		elapsed += step
+	}
+	return false
 }
 
 func (m *Miner) startPubSub(streamers []*entities.Streamer, stop <-chan struct{}) {
@@ -438,6 +661,9 @@ func (m *Miner) updateHistory(streamer *entities.Streamer, reason string, amount
 	}
 	entry.Count++
 	entry.Amount += amount
+	if reason == "WATCH_STREAK" && streamer.Stream != nil {
+		streamer.Stream.WatchStreakMissing = false
+	}
 }
 
 func (m *Miner) handlePubSubPresence(streamer *entities.Streamer, online bool, reason string) {
@@ -448,12 +674,14 @@ func (m *Miner) setPresence(streamer *entities.Streamer, online bool, reason str
 	prevKnown := streamer.PresenceKnown
 	prevOnline := streamer.IsOnline
 	streamer.PresenceKnown = true
-	streamer.IsOnline = online
-	if online {
-		streamer.OnlineAt = time.Now()
-	} else {
-		streamer.OfflineAt = time.Now()
+	if online != prevOnline || !prevKnown {
+		if online {
+			streamer.OnlineAt = time.Now()
+		} else {
+			streamer.OfflineAt = time.Now()
+		}
 	}
+	streamer.IsOnline = online
 	if !prevKnown {
 		if online {
 			m.logOnline(streamer)

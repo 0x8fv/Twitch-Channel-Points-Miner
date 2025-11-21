@@ -63,6 +63,13 @@ func (s *Stream) UpdateMinuteWatched() {
 	s.lastMinuteUpdate = time.Now()
 }
 
+func (s *Stream) LastUpdateAgo() time.Duration {
+	if s == nil || s.lastUpdate.IsZero() {
+		return 0
+	}
+	return time.Since(s.lastUpdate)
+}
+
 func (s *Stream) EncodePayload() (map[string]string, error) {
 	raw, err := json.Marshal(s.Payload)
 	if err != nil {

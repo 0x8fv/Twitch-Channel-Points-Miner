@@ -58,23 +58,44 @@ type StreamerSettings struct {
 }
 
 type Streamer struct {
-	Username      string           `json:"username"`
-	ChannelID     string           `json:"channel_id"`
-	ChannelPoints int              `json:"channel_points"`
-	Settings      StreamerSettings `json:"settings"`
-	StreamerURL   string           `json:"-"`
-	IsOnline      bool             `json:"-"`
-	PresenceKnown bool             `json:"-"`
-	OnlineAt      time.Time        `json:"-"`
-	OfflineAt     time.Time        `json:"-"`
-	Stream        *Stream          `json:"-"`
-	PointsInit    bool             `json:"-"`
-	History       map[string]*HistoryEntry
+	Username          string                   `json:"username"`
+	ChannelID         string                   `json:"channel_id"`
+	ChannelPoints     int                      `json:"channel_points"`
+	Settings          StreamerSettings         `json:"settings"`
+	StreamerURL       string                   `json:"-"`
+	IsOnline          bool                     `json:"-"`
+	PresenceKnown     bool                     `json:"-"`
+	OnlineAt          time.Time                `json:"-"`
+	OfflineAt         time.Time                `json:"-"`
+	Stream            *Stream                  `json:"-"`
+	PointsInit        bool                     `json:"-"`
+	ActiveMultipliers []map[string]interface{} `json:"-"`
+	History           map[string]*HistoryEntry
 }
 
 type HistoryEntry struct {
 	Count  int
 	Amount int
+}
+
+func (s *Streamer) HasActiveMultipliers() bool {
+	return len(s.ActiveMultipliers) > 0
+}
+
+func (s *Streamer) TotalMultiplier() float64 {
+	total := 0.0
+	for _, mult := range s.ActiveMultipliers {
+		if mult == nil {
+			continue
+		}
+		switch v := mult["factor"].(type) {
+		case float64:
+			total += v
+		case int:
+			total += float64(v)
+		}
+	}
+	return total
 }
 
 func (b *BetSettings) Default() {
