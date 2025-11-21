@@ -3,25 +3,10 @@ package utils
 import (
 	"encoding/json"
 	"os"
-	"runtime"
 )
 
-func GetUserAgent(browser string) string {
-	platform := "Linux"
-	switch runtime.GOOS {
-	case "windows":
-		platform = "Windows"
-	case "android":
-		platform = "Android"
-	}
-
-	if agent, ok := UserAgents[platform][browser]; ok {
-		return agent
-	}
-	for _, agent := range UserAgents[platform] {
-		return agent
-	}
-	return ""
+func GetUserAgent(_ string) string {
+	return UserAgents["Android"]["TV"]
 }
 
 func SaveJSON(path string, data interface{}) error {

@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -74,10 +75,24 @@ func (t *TwitchLogin) runDeviceFlow() error {
 		"client_id": {t.ClientID},
 		"scopes":    {("channel_read chat:read user_blocks_edit user_blocks_read user_follows_edit user_read")},
 	}
+
+	addDeviceHeaders := func(req *http.Request) {
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Accept-Encoding", "gzip")
+		req.Header.Set("Accept-Language", "en-US")
+		req.Header.Set("Cache-Control", "no-cache")
+		req.Header.Set("Client-Id", t.ClientID)
+		req.Header.Set("Host", "id.twitch.tv")
+		req.Header.Set("Origin", "https://android.tv.twitch.tv")
+		req.Header.Set("Pragma", "no-cache")
+		req.Header.Set("Referer", "https://android.tv.twitch.tv/")
+		req.Header.Set("User-Agent", utils.UserAgents["Android"]["TV"])
+		req.Header.Set("X-Device-Id", t.DeviceID)
+	}
+
 	req, _ := http.NewRequest(http.MethodPost, "https://id.twitch.tv/oauth2/device", bytes.NewBufferString(postData.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("User-Agent", utils.UserAgents["Android"]["TV"])
-	req.Header.Set("X-Device-Id", t.DeviceID)
+	addDeviceHeaders(req)
 
 	resp, err := t.client.Do(req)
 	if err != nil {
@@ -110,8 +125,7 @@ func (t *TwitchLogin) runDeviceFlow() error {
 		time.Sleep(time.Duration(payload.Interval) * time.Second)
 		req, _ := http.NewRequest(http.MethodPost, "https://id.twitch.tv/oauth2/token", bytes.NewBufferString(tokenData.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("User-Agent", utils.UserAgents["Android"]["TV"])
-		req.Header.Set("X-Device-Id", t.DeviceID)
+		addDeviceHeaders(req)
 		resp, err := t.client.Do(req)
 		if err != nil {
 			return err
@@ -139,6 +153,7 @@ func (t *TwitchLogin) setToken(token string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.Token = token
+	t.ensureSessionCookiesLocked()
 }
 
 func decodeCookieStore(data []byte) (cookieStore, error) {
@@ -175,22 +190,31 @@ func (t *TwitchLogin) saveCookies(cookiesPath string) error {
 	if err := os.MkdirAll(filepath.Dir(cookiesPath), 0o755); err != nil {
 		return err
 	}
-	twitchURL := &url.URL{Scheme: "https", Host: ".twitch.tv"}
-	cookies := t.client.Jar.Cookies(twitchURL)
-	store := make(cookieStore, len(cookies)+1)
-	for _, c := range cookies {
-		if c == nil || c.Name == "" {
-			continue
-		}
-		store[c.Name] = persistedCookie{
-			Value:  c.Value,
-			Path:   c.Path,
-			Domain: c.Domain,
+	t.ensureSessionCookiesLocked()
+
+	hostnames := []string{"twitch.tv", "id.twitch.tv"}
+	store := make(cookieStore)
+	for _, host := range hostnames {
+		u := &url.URL{Scheme: "https", Host: host}
+		for _, c := range t.client.Jar.Cookies(u) {
+			if c == nil || c.Name == "" {
+				continue
+			}
+			store[c.Name] = persistedCookie{
+				Value:  c.Value,
+				Path:   c.Path,
+				Domain: c.Domain,
+			}
 		}
 	}
-	if t.Token != "" {
+
+	if _, ok := store["auth-token"]; !ok && t.Token != "" {
 		store["auth-token"] = persistedCookie{Value: t.Token}
 	}
+	if _, ok := store["persistent"]; !ok && t.userID != "" {
+		store["persistent"] = persistedCookie{Value: t.userID}
+	}
+
 	raw, err := json.MarshalIndent(store, "", "  ")
 	if err != nil {
 		return err
@@ -207,8 +231,8 @@ func (t *TwitchLogin) loadCookies(cookiesPath string) error {
 	if err != nil {
 		return err
 	}
-	u := &url.URL{Scheme: "https", Host: ".twitch.tv"}
-	var cookies []*http.Cookie
+
+	sessionCookies := make(map[string][]*http.Cookie)
 	for name, c := range store {
 		if name == "auth-token" {
 			if c.Value != "" {
@@ -216,17 +240,40 @@ func (t *TwitchLogin) loadCookies(cookiesPath string) error {
 			}
 			continue
 		}
+		if name == "persistent" && c.Value != "" && t.userID == "" {
+			t.userID = c.Value
+		}
 		if c.Value == "" {
 			continue
 		}
-		cookies = append(cookies, &http.Cookie{
+
+		domain := c.Domain
+		if domain == "" {
+			domain = ".twitch.tv"
+		}
+		path := c.Path
+		if path == "" {
+			path = "/"
+		}
+		cookie := &http.Cookie{
 			Name:   name,
 			Value:  c.Value,
-			Path:   c.Path,
-			Domain: c.Domain,
-		})
+			Path:   path,
+			Domain: domain,
+		}
+		host := strings.TrimPrefix(domain, ".")
+		sessionCookies[host] = append(sessionCookies[host], cookie)
 	}
-	t.client.Jar.SetCookies(u, cookies)
+
+	for host, cookies := range sessionCookies {
+		u := &url.URL{Scheme: "https", Host: host}
+		t.client.Jar.SetCookies(u, append(t.client.Jar.Cookies(u), cookies...))
+	}
+
+	// ? Re-apply auth token and persistent cookies into the jar for future HTTP requests.
+	t.mu.Lock()
+	t.ensureSessionCookiesLocked()
+	t.mu.Unlock()
 	return nil
 }
 
@@ -279,8 +326,39 @@ func (t *TwitchLogin) checkLogin() bool {
 	if res.Data.User.ID != "" {
 		t.mu.Lock()
 		t.userID = res.Data.User.ID
+		t.ensureSessionCookiesLocked()
 		t.mu.Unlock()
 		return true
 	}
 	return false
+}
+
+// ? Caller must hold t.mu.
+func (t *TwitchLogin) ensureSessionCookiesLocked() {
+	if t.client == nil || t.client.Jar == nil {
+		return
+	}
+	if t.Token != "" {
+		t.upsertSessionCookiesLocked("auth-token", t.Token)
+	}
+	if t.userID != "" {
+		t.upsertSessionCookiesLocked("persistent", t.userID)
+	}
+}
+
+func (t *TwitchLogin) upsertSessionCookiesLocked(name, value string) {
+	if value == "" {
+		return
+	}
+	for _, host := range []string{"twitch.tv", "id.twitch.tv"} {
+		u := &url.URL{Scheme: "https", Host: host}
+		existing := t.client.Jar.Cookies(u)
+		c := &http.Cookie{
+			Name:   name,
+			Value:  value,
+			Path:   "/",
+			Domain: "." + host,
+		}
+		t.client.Jar.SetCookies(u, append(existing, c))
+	}
 }
