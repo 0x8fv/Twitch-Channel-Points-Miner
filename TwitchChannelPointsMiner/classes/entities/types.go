@@ -71,6 +71,7 @@ type Streamer struct {
 	PointsInit        bool                     `json:"-"`
 	ActiveMultipliers []map[string]interface{} `json:"-"`
 	History           map[string]*HistoryEntry
+	CommunityGoals    map[string]*CommunityGoal `json:"-"`
 }
 
 type HistoryEntry struct {
@@ -96,6 +97,29 @@ func (s *Streamer) TotalMultiplier() float64 {
 		}
 	}
 	return total
+}
+
+func (s *Streamer) PredictionWindowSeconds(predictionWindow float64) float64 {
+	delay := 0.0
+	if s.Settings.Bet.Delay != nil {
+		delay = *s.Settings.Bet.Delay
+	}
+	switch s.Settings.Bet.DelayMode {
+	case DelayModeFromStart:
+		if delay < predictionWindow {
+			return delay
+		}
+		return predictionWindow
+	case DelayModeFromEnd:
+		if predictionWindow-delay > 0 {
+			return predictionWindow - delay
+		}
+		return 0
+	case DelayModePercentage:
+		return predictionWindow * delay
+	default:
+		return predictionWindow
+	}
 }
 
 func (b *BetSettings) Default() {

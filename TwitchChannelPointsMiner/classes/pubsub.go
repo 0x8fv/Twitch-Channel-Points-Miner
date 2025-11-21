@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/classes/entities"
@@ -15,6 +16,7 @@ import (
 type Logger interface {
 	Printf(format string, args ...interface{})
 	Errorf(format string, args ...interface{})
+	EmojiPrintf(emoji, format string, args ...interface{})
 }
 
 type PubSubClient struct {
@@ -22,6 +24,8 @@ type PubSubClient struct {
 	logger      Logger
 	streamers   []*entities.Streamer
 	streamerMap map[string]*entities.Streamer
+	predictions map[string]*PredictionEvent
+	predMu      sync.Mutex
 	onGain      func(streamer *entities.Streamer, earned int, reason string, balance int)
 	onPresence  func(streamer *entities.Streamer, online bool, reason string)
 }
@@ -44,6 +48,7 @@ func NewPubSubClient(
 		logger:      logger,
 		streamers:   streamers,
 		streamerMap: streamerMap,
+		predictions: make(map[string]*PredictionEvent),
 		onGain:      onGain,
 		onPresence:  onPresence,
 	}
@@ -237,12 +242,25 @@ func (p *PubSubClient) handleTopicMessage(envelope map[string]interface{}) error
 	if err := json.Unmarshal([]byte(messageStr), &payload); err != nil {
 		return err
 	}
-	msgType, _ := payload["type"].(string)
-	switch msgType {
-	case "points-earned":
+	msgType := strings.ToLower(fmt.Sprint(payload["type"]))
+
+	switch {
+	case msgType == "points-earned":
 		return p.processPointsEarned(payload)
-	case "viewcount", "stream-up", "stream-down":
+	case msgType == "claim-available":
+		return p.processClaimAvailable(payload)
+	case strings.HasPrefix(topic, "video-playback-by-id."):
 		return p.processPlaybackMessage(topic, payload)
+	case strings.HasPrefix(topic, "raid."):
+		return p.processRaidMessage(topic, payload)
+	case strings.HasPrefix(topic, "community-moments-channel-v1."):
+		return p.processMomentMessage(topic, payload)
+	case strings.HasPrefix(topic, "predictions-channel-v1."):
+		return p.processPredictionChannel(topic, payload)
+	case strings.HasPrefix(topic, "predictions-user-v1."):
+		return p.processPredictionUser(payload)
+	case strings.HasPrefix(topic, "community-points-channel-v1."):
+		return p.processCommunityPointChannel(topic, payload)
 	default:
 		return nil
 	}
@@ -270,6 +288,51 @@ func (p *PubSubClient) processPlaybackMessage(topic string, payload map[string]i
 	case "stream-down":
 		p.onPresence(streamer, false, msgType)
 	}
+	return nil
+}
+
+func (p *PubSubClient) processRaidMessage(topic string, payload map[string]interface{}) error {
+	channelID := strings.TrimPrefix(topic, "raid.")
+	streamer := p.streamerMap[channelID]
+	if streamer == nil || !streamer.Settings.FollowRaid {
+		return nil
+	}
+	raidData, _ := payload["raid"].(map[string]interface{})
+	raidID, _ := raidData["id"].(string)
+	target, _ := raidData["target_login"].(string)
+	if raidID == "" {
+		return nil
+	}
+	if err := p.twitch.JoinRaid(streamer, raidID); err != nil {
+		p.logger.Errorf("join raid %s->%s: %v", streamer.Username, target, err)
+		return nil
+	}
+	if target == "" {
+		target = "raid target"
+	}
+	p.logger.EmojiPrintf(":performing_arts:", "Joining raid from %s to %s", streamer.Username, target)
+	return nil
+}
+
+func (p *PubSubClient) processMomentMessage(topic string, payload map[string]interface{}) error {
+	channelID := strings.TrimPrefix(topic, "community-moments-channel-v1.")
+	streamer := p.streamerMap[channelID]
+	if streamer == nil || !streamer.Settings.ClaimMoments {
+		return nil
+	}
+	if strings.ToLower(fmt.Sprint(payload["type"])) != "active" {
+		return nil
+	}
+	data, _ := payload["data"].(map[string]interface{})
+	momentID, _ := data["moment_id"].(string)
+	if momentID == "" {
+		return nil
+	}
+	if err := p.twitch.ClaimMoment(streamer, momentID); err != nil {
+		p.logger.Errorf("claim moment %s: %v", streamer.Username, err)
+		return nil
+	}
+	p.logger.EmojiPrintf(":video_camera:", "%s Claimed Moment", streamer.Username)
 	return nil
 }
 
@@ -303,6 +366,168 @@ func (p *PubSubClient) processPointsEarned(payload map[string]interface{}) error
 	return nil
 }
 
+func (p *PubSubClient) processClaimAvailable(payload map[string]interface{}) error {
+	data, _ := payload["data"].(map[string]interface{})
+	if data == nil {
+		return nil
+	}
+	claim, _ := data["claim"].(map[string]interface{})
+	claimID, _ := claim["id"].(string)
+	channelID := fmt.Sprint(claim["channel_id"])
+	if channelID == "" {
+		channelID = fmt.Sprint(data["channel_id"])
+	}
+	streamer := p.streamerMap[channelID]
+	if streamer == nil || claimID == "" {
+		return nil
+	}
+	if err := p.twitch.ClaimBonus(streamer, claimID); err != nil {
+		p.logger.Errorf("claim bonus %s: %v", streamer.Username, err)
+	}
+	return nil
+}
+
+func (p *PubSubClient) processPredictionChannel(topic string, payload map[string]interface{}) error {
+	channelID := strings.TrimPrefix(topic, "predictions-channel-v1.")
+	streamer := p.streamerMap[channelID]
+	if streamer == nil || !streamer.Settings.MakePredictions {
+		return nil
+	}
+	data, _ := payload["data"].(map[string]interface{})
+	eventMap, _ := data["event"].(map[string]interface{})
+	if eventMap == nil {
+		return nil
+	}
+	eventID, _ := eventMap["id"].(string)
+	status := strings.ToUpper(stringOrDefault(eventMap["status"]))
+
+	p.predMu.Lock()
+	defer p.predMu.Unlock()
+
+	switch strings.ToLower(fmt.Sprint(payload["type"])) {
+	case "event-created":
+		if status != "ACTIVE" || eventID == "" {
+			return nil
+		}
+		window := eventMap["prediction_window_seconds"]
+		eventMap["prediction_window_seconds"] = streamer.PredictionWindowSeconds(fromFloat(window))
+		event := NewPredictionEvent(streamer, eventMap)
+		if event == nil {
+			return nil
+		}
+		if streamer.Settings.Bet.MinimumPoints != nil && streamer.ChannelPoints <= *streamer.Settings.Bet.MinimumPoints {
+			return nil
+		}
+		wait := event.ClosingAfter(time.Now())
+		p.predictions[event.EventID] = event
+		time.AfterFunc(wait, func() {
+			p.placePrediction(event.EventID)
+		})
+		p.logger.EmojiPrintf(":alarm_clock:", "Place bet after %s for %s", wait.Truncate(time.Second), streamer.Username)
+	case "event-updated":
+		if existing, ok := p.predictions[eventID]; ok {
+			existing.Status = status
+			if !existing.BetPlaced {
+				if outcomes, ok := eventMap["outcomes"].([]interface{}); ok {
+					existing.UpdateOutcomes(outcomes)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (p *PubSubClient) processPredictionUser(payload map[string]interface{}) error {
+	data, _ := payload["data"].(map[string]interface{})
+	if data == nil {
+		return nil
+	}
+	predictionData, _ := data["prediction"].(map[string]interface{})
+	if predictionData == nil {
+		return nil
+	}
+	eventID := fmt.Sprint(predictionData["event_id"])
+	p.predMu.Lock()
+	event, ok := p.predictions[eventID]
+	p.predMu.Unlock()
+	if !ok || event == nil {
+		return nil
+	}
+
+	switch strings.ToLower(fmt.Sprint(payload["type"])) {
+	case "prediction-made":
+		event.BetConfirmed = true
+	case "prediction-result":
+		result, _ := predictionData["result"].(map[string]interface{})
+		gained, placed, won, resultType := event.ParseResult(result)
+		streamer := event.Streamer
+		p.logger.EmojiPrintf(":bar_chart:", "%s result %s | placed %d, won %d, delta %+d", streamer.Username, resultType, placed, won, gained)
+		if streamer != nil && gained != 0 {
+			recordHistory(streamer, "PREDICTION", gained)
+		}
+		p.predMu.Lock()
+		delete(p.predictions, eventID)
+		p.predMu.Unlock()
+	}
+	return nil
+}
+
+func (p *PubSubClient) placePrediction(eventID string) {
+	p.predMu.Lock()
+	event, ok := p.predictions[eventID]
+	p.predMu.Unlock()
+	if !ok || event == nil || event.Streamer == nil {
+		return
+	}
+	if event.Status != "ACTIVE" {
+		return
+	}
+	streamer := event.Streamer
+	decision := event.Decide(streamer.ChannelPoints)
+	if streamer.Settings.Bet.MinimumPoints != nil && streamer.ChannelPoints <= *streamer.Settings.Bet.MinimumPoints {
+		return
+	}
+	if decision.Amount < 10 || decision.OutcomeID == "" {
+		return
+	}
+	if err := p.twitch.MakePrediction(event); err != nil {
+		p.logger.Errorf("prediction %s: %v", streamer.Username, err)
+		return
+	}
+	event.BetPlaced = true
+	p.logger.EmojiPrintf(":four_leaf_clover:", "Place %d points on %s for %s", decision.Amount, decision.OutcomeID, streamer.Username)
+	recordHistory(streamer, "PREDICTION", -decision.Amount)
+}
+
+func (p *PubSubClient) processCommunityPointChannel(topic string, payload map[string]interface{}) error {
+	channelID := strings.TrimPrefix(topic, "community-points-channel-v1.")
+	streamer := p.streamerMap[channelID]
+	if streamer == nil || !streamer.Settings.CommunityGoals {
+		return nil
+	}
+	msgType := strings.ToLower(fmt.Sprint(payload["type"]))
+	if streamer.CommunityGoals == nil {
+		streamer.CommunityGoals = make(map[string]*entities.CommunityGoal)
+	}
+	switch msgType {
+	case "community-goal-created", "community-goal-updated":
+		data, _ := payload["data"].(map[string]interface{})
+		goalData, _ := data["community_goal"].(map[string]interface{})
+		if goal := entities.NewCommunityGoalFromPubSub(goalData); goal != nil && goal.ID != "" {
+			streamer.CommunityGoals[goal.ID] = goal
+		}
+		p.twitch.ContributeToCommunityGoals(streamer)
+	case "community-goal-deleted":
+		data, _ := payload["data"].(map[string]interface{})
+		goalData, _ := data["community_goal"].(map[string]interface{})
+		id := stringOrDefault(goalData["id"])
+		if id != "" {
+			delete(streamer.CommunityGoals, id)
+		}
+	}
+	return nil
+}
+
 func (p *PubSubClient) randomPingInterval() time.Duration {
 	return time.Duration(randomInt(25, 30)) * time.Second
 }
@@ -321,4 +546,20 @@ func chunkTopics(topics []string, chunkSize int) [][]string {
 		topics = topics[end:]
 	}
 	return batches
+}
+
+func recordHistory(streamer *entities.Streamer, reason string, amount int) {
+	if streamer == nil || reason == "" {
+		return
+	}
+	if streamer.History == nil {
+		streamer.History = make(map[string]*entities.HistoryEntry)
+	}
+	entry, ok := streamer.History[reason]
+	if !ok {
+		entry = &entities.HistoryEntry{}
+		streamer.History[reason] = entry
+	}
+	entry.Count++
+	entry.Amount += amount
 }

@@ -3,6 +3,7 @@ package classes
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -195,6 +196,11 @@ func (t *Twitch) LoadChannelPointsContext(streamer *entities.Streamer) (int, err
 		streamer.ActiveMultipliers = multipliers
 	} else {
 		streamer.ActiveMultipliers = nil
+	}
+	if streamer.Settings.CommunityGoals {
+		goals := navigate(resp, "data.community.channel.communityPointsSettings.goals")
+		streamer.CommunityGoals = parseCommunityGoals(goals)
+		t.ContributeToCommunityGoals(streamer)
 	}
 	if available := navigate(resp, "data.community.channel.self.communityPoints.availableClaim"); available != nil {
 		if claimID, ok := navigate(available, "id").(string); ok && claimID != "" {
@@ -392,6 +398,56 @@ func (t *Twitch) ClaimBonus(streamer *entities.Streamer, claimID string) error {
 	return err
 }
 
+// ? ClaimMoment redeems a community moment callout.
+func (t *Twitch) ClaimMoment(streamer *entities.Streamer, momentID string) error {
+	if momentID == "" {
+		return nil
+	}
+	op := constants.GQLOperations.CommunityMomentCalloutClaim
+	if op.Variables == nil {
+		op.Variables = map[string]interface{}{}
+	}
+	op.Variables["input"] = map[string]interface{}{"momentID": momentID}
+	_, err := t.PostGQL(op)
+	return err
+}
+
+// ? JoinRaid follows a raid target to mimic viewer behavior.
+func (t *Twitch) JoinRaid(streamer *entities.Streamer, raidID string) error {
+	if raidID == "" {
+		return fmt.Errorf("missing raid id")
+	}
+	op := constants.GQLOperations.JoinRaid
+	if op.Variables == nil {
+		op.Variables = map[string]interface{}{}
+	}
+	op.Variables["input"] = map[string]interface{}{"raidID": raidID}
+	_, err := t.PostGQL(op)
+	return err
+}
+
+// ? MakePrediction places a bet for the provided event.
+func (t *Twitch) MakePrediction(event *PredictionEvent) error {
+	if event == nil || event.Streamer == nil {
+		return fmt.Errorf("nil prediction event")
+	}
+	if event.Decision.Amount < 10 || event.Decision.OutcomeID == "" || event.EventID == "" {
+		return fmt.Errorf("invalid prediction decision")
+	}
+	op := constants.GQLOperations.MakePrediction
+	if op.Variables == nil {
+		op.Variables = map[string]interface{}{}
+	}
+	op.Variables["input"] = map[string]interface{}{
+		"eventID":       event.EventID,
+		"outcomeID":     event.Decision.OutcomeID,
+		"points":        event.Decision.Amount,
+		"transactionID": randomHex(16),
+	}
+	_, err := t.PostGQL(op)
+	return err
+}
+
 // ? ClaimDrop claims a single drop instance.
 func (t *Twitch) ClaimDrop(dropInstanceID string) (bool, error) {
 	op := constants.GQLOperations.DropsPageClaimDropRewards
@@ -462,6 +518,90 @@ func (t *Twitch) ClaimAllDropsFromInventory() ([]ClaimedDrop, error) {
 		}
 	}
 	return claimedDrops, claimErr
+}
+
+// ? ContributeToCommunityGoals mirrors the site behavior by spending points into active community goals.
+func (t *Twitch) ContributeToCommunityGoals(streamer *entities.Streamer) {
+	if streamer == nil || !streamer.Settings.CommunityGoals || len(streamer.CommunityGoals) == 0 {
+		return
+	}
+	hasActive := false
+	for _, goal := range streamer.CommunityGoals {
+		if goal != nil && goal.Status == "STARTED" && goal.IsInStock {
+			hasActive = true
+			break
+		}
+	}
+	if !hasActive {
+		return
+	}
+
+	op := constants.GQLOperations.UserPointsContribution
+	if op.Variables == nil {
+		op.Variables = map[string]interface{}{}
+	}
+	op.Variables["channelLogin"] = streamer.Username
+	resp, err := t.PostGQL(op)
+	if err != nil {
+		return
+	}
+	contribs := navigate(resp, "data.user.channel.self.communityPoints.goalContributions")
+	arr, ok := contribs.([]interface{})
+	if !ok {
+		return
+	}
+	for _, raw := range arr {
+		goalContribution, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		goalData, _ := goalContribution["goal"].(map[string]interface{})
+		goalID, _ := goalData["id"].(string)
+		if goalID == "" {
+			continue
+		}
+		goal := streamer.CommunityGoals[goalID]
+		if goal == nil {
+			continue
+		}
+		userPoints := int(fromFloat(goalContribution["userPointsContributedThisStream"]))
+		userLeft := goal.PerStreamUserMaximumContribution - userPoints
+		amount := minInt(goal.AmountLeft(), userLeft, streamer.ChannelPoints)
+		if amount > 0 {
+			_ = t.ContributeToCommunityGoal(streamer, goalID, goal.Title, amount)
+		}
+	}
+}
+
+// ? ContributeToCommunityGoal sends a single contribution transaction.
+func (t *Twitch) ContributeToCommunityGoal(streamer *entities.Streamer, goalID, title string, amount int) error {
+	if amount <= 0 || goalID == "" {
+		return nil
+	}
+	op := constants.GQLOperations.ContributeCommunityPointsCommunityGoal
+	if op.Variables == nil {
+		op.Variables = map[string]interface{}{}
+	}
+	op.Variables["input"] = map[string]interface{}{
+		"amount":        amount,
+		"channelID":     streamer.ChannelID,
+		"goalID":        goalID,
+		"transactionID": randomHex(16),
+	}
+	resp, err := t.PostGQL(op)
+	if err != nil {
+		return err
+	}
+	if errVal := navigate(resp, "data.contributeCommunityPointsCommunityGoal.error"); errVal != nil {
+		if errStr, ok := errVal.(string); ok && errStr != "" {
+			return fmt.Errorf("unable to contribute to %s: %s", title, errStr)
+		}
+	}
+	streamer.ChannelPoints -= amount
+	if streamer.ChannelPoints < 0 {
+		streamer.ChannelPoints = 0
+	}
+	return nil
 }
 
 func campaignNameFromInventory(campaign map[string]interface{}) string {
@@ -558,6 +698,22 @@ func (t *Twitch) CampaignIDsForStreamer(streamer *entities.Streamer) ([]string, 
 	return res, nil
 }
 
+func parseCommunityGoals(goals interface{}) map[string]*entities.CommunityGoal {
+	arr, ok := goals.([]interface{})
+	if !ok {
+		return nil
+	}
+	result := make(map[string]*entities.CommunityGoal, len(arr))
+	for _, raw := range arr {
+		if goalMap, ok := raw.(map[string]interface{}); ok {
+			if goal := entities.NewCommunityGoalFromGQL(goalMap); goal != nil && goal.ID != "" {
+				result[goal.ID] = goal
+			}
+		}
+	}
+	return result
+}
+
 func (t *Twitch) inventory() map[string]interface{} {
 	resp, err := t.PostGQL(constants.GQLOperations.Inventory)
 	if err != nil || resp == nil {
@@ -578,6 +734,30 @@ func randomString(length int) string {
 		buf[i] = charset[nBig.Int64()]
 	}
 	return string(buf)
+}
+
+func randomHex(length int) string {
+	if length <= 0 {
+		return ""
+	}
+	bytes := make([]byte, length)
+	if _, err := rand.Read(bytes); err != nil {
+		return randomString(length)
+	}
+	return hex.EncodeToString(bytes)
+}
+
+func minInt(values ...int) int {
+	if len(values) == 0 {
+		return 0
+	}
+	min := values[0]
+	for _, v := range values[1:] {
+		if v < min {
+			min = v
+		}
+	}
+	return min
 }
 
 func randomInt(min, max int) int {

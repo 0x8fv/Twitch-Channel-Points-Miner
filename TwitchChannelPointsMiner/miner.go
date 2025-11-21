@@ -249,6 +249,11 @@ func (m *Miner) contextRefresher(streamers []*entities.Streamer, stop <-chan str
 					m.logger.Printf("refresh %s: %v", s.Username, err)
 				} else {
 					m.handlePointsUpdate(s, prev, "")
+					if s.Settings.ClaimDrops && s.Stream != nil {
+						if campaigns, err := m.twitch.CampaignIDsForStreamer(s); err == nil {
+							s.Stream.CampaignIDs = campaigns
+						}
+					}
 				}
 			}
 		case <-stop:

@@ -35,6 +35,7 @@ type config struct {
 	ClaimDrops                 bool      `json:"claim_drops"`
 	BettingMakePredictions     bool      `json:"betting(make_predictions)"`
 	FollowRaid                 bool      `json:"follow_raid"`
+	CommunityGoals             bool      `json:"community_goals"`
 	Emojis                     bool      `json:"emojis"`
 	SaveLogs                   bool      `json:"save_logs"`
 	ShowUsernameInConsole      bool      `json:"show_username_in_console"`
@@ -77,6 +78,7 @@ func defaultConfig() map[string]interface{} {
 		"claim_drops":                   true,
 		"betting(make_predictions)":     true,
 		"follow_raid":                   true,
+		"community_goals":               false,
 		"emojis":                        true,
 		"save_logs":                     false,
 		"show_username_in_console":      false,
@@ -177,7 +179,7 @@ func main() {
 		ClaimDrops:      cfg.ClaimDrops,
 		ClaimMoments:    true,
 		WatchStreak:     true,
-		CommunityGoals:  false,
+		CommunityGoals:  cfg.CommunityGoals,
 		Bet:             betSettings,
 	}
 	streamerSettings.Default()
