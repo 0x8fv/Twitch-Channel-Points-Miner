@@ -190,7 +190,6 @@ func (m *Miner) contextRefresher(streamers []*entities.Streamer, stop <-chan str
 				} else {
 					m.handlePointsUpdate(s, prev, "")
 				}
-				m.updatePresence(s)
 			}
 		case <-stop:
 			return
@@ -225,7 +224,13 @@ func (m *Miner) minuteWatcher(streamers []*entities.Streamer, stop <-chan struct
 }
 
 func (m *Miner) startPubSub(streamers []*entities.Streamer, stop <-chan struct{}) {
-	client := classpkg.NewPubSubClient(m.twitch, m.logger, streamers, m.handlePubSubGain)
+	client := classpkg.NewPubSubClient(
+		m.twitch,
+		m.logger,
+		streamers,
+		m.handlePubSubGain,
+		m.handlePubSubPresence,
+	)
 	client.Start(stop)
 }
 
@@ -266,28 +271,12 @@ func (m *Miner) shutdown(sessionID string) {
 }
 
 func (m *Miner) updatePresence(streamer *entities.Streamer) {
-	prev := streamer.IsOnline
 	online, err := m.twitch.CheckStreamerOnline(streamer)
 	if err != nil {
 		m.logger.Printf("online check %s: %v", streamer.Username, err)
 		return
 	}
-	if !streamer.PresenceKnown {
-		if online {
-			m.logOnline(streamer)
-		} else {
-			m.logOffline(streamer)
-		}
-		streamer.PresenceKnown = true
-		return
-	}
-	if online != prev {
-		if online {
-			m.logOnline(streamer)
-		} else {
-			m.logOffline(streamer)
-		}
-	}
+	m.setPresence(streamer, online, "poll")
 }
 
 func (m *Miner) logOnline(streamer *entities.Streamer) {
@@ -449,6 +438,42 @@ func (m *Miner) updateHistory(streamer *entities.Streamer, reason string, amount
 	}
 	entry.Count++
 	entry.Amount += amount
+}
+
+func (m *Miner) handlePubSubPresence(streamer *entities.Streamer, online bool, reason string) {
+	m.setPresence(streamer, online, fmt.Sprintf("pubsub:%s", reason))
+}
+
+func (m *Miner) setPresence(streamer *entities.Streamer, online bool, reason string) {
+	prevKnown := streamer.PresenceKnown
+	prevOnline := streamer.IsOnline
+	streamer.PresenceKnown = true
+	streamer.IsOnline = online
+	if online {
+		streamer.OnlineAt = time.Now()
+	} else {
+		streamer.OfflineAt = time.Now()
+	}
+	if !prevKnown {
+		if online {
+			m.logOnline(streamer)
+		} else {
+			m.logOffline(streamer)
+		}
+		return
+	}
+	if prevOnline != online {
+		if online {
+			m.logOnline(streamer)
+		} else {
+			m.logOffline(streamer)
+		}
+		return
+	}
+	if reason != "" && !online {
+		// ? Offline message already logged for state changes; keep silent on no-op toggles.
+		return
+	}
 }
 
 // ? newSessionID creates a UUID-like string for session logging.

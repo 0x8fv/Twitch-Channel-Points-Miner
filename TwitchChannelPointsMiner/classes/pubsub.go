@@ -23,9 +23,16 @@ type PubSubClient struct {
 	streamers   []*entities.Streamer
 	streamerMap map[string]*entities.Streamer
 	onGain      func(streamer *entities.Streamer, earned int, reason string, balance int)
+	onPresence  func(streamer *entities.Streamer, online bool, reason string)
 }
 
-func NewPubSubClient(twitch *Twitch, logger Logger, streamers []*entities.Streamer, onGain func(*entities.Streamer, int, string, int)) *PubSubClient {
+func NewPubSubClient(
+	twitch *Twitch,
+	logger Logger,
+	streamers []*entities.Streamer,
+	onGain func(*entities.Streamer, int, string, int),
+	onPresence func(*entities.Streamer, bool, string),
+) *PubSubClient {
 	streamerMap := make(map[string]*entities.Streamer)
 	for _, s := range streamers {
 		if s.ChannelID != "" {
@@ -38,6 +45,7 @@ func NewPubSubClient(twitch *Twitch, logger Logger, streamers []*entities.Stream
 		streamers:   streamers,
 		streamerMap: streamerMap,
 		onGain:      onGain,
+		onPresence:  onPresence,
 	}
 }
 
@@ -220,6 +228,7 @@ func (p *PubSubClient) handleTopicMessage(envelope map[string]interface{}) error
 	if data == nil {
 		return nil
 	}
+	topic, _ := data["topic"].(string)
 	messageStr, _ := data["message"].(string)
 	if messageStr == "" {
 		return nil
@@ -232,9 +241,36 @@ func (p *PubSubClient) handleTopicMessage(envelope map[string]interface{}) error
 	switch msgType {
 	case "points-earned":
 		return p.processPointsEarned(payload)
+	case "viewcount", "stream-up", "stream-down":
+		return p.processPlaybackMessage(topic, payload)
 	default:
 		return nil
 	}
+}
+
+func (p *PubSubClient) processPlaybackMessage(topic string, payload map[string]interface{}) error {
+	channelID := ""
+	if strings.HasPrefix(topic, "video-playback-by-id.") {
+		channelID = strings.TrimPrefix(topic, "video-playback-by-id.")
+	}
+	if channelID == "" {
+		return nil
+	}
+	streamer, ok := p.streamerMap[channelID]
+	if !ok {
+		return nil
+	}
+	if p.onPresence == nil {
+		return nil
+	}
+	msgType := strings.ToLower(fmt.Sprint(payload["type"]))
+	switch msgType {
+	case "stream-up", "viewcount":
+		p.onPresence(streamer, true, msgType)
+	case "stream-down":
+		p.onPresence(streamer, false, msgType)
+	}
+	return nil
 }
 
 func (p *PubSubClient) processPointsEarned(payload map[string]interface{}) error {
