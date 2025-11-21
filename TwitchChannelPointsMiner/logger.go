@@ -104,6 +104,7 @@ var emojiMap = map[string]string{
 	":moneybag:":               "💰",
 	":green_circle:":           "🟢",
 	":white_check_mark:":       "✅",
+	":package:":                "📦",
 	":hourglass:":              "⌛",
 	":hourglass_flowing_sand:": "⏳",
 	":speech_balloon:":         "💬",

@@ -9,7 +9,7 @@ const (
 	DropID        = "c2542d6d-cd10-4532-919b-3d19f30a768b"
 	ClientVersion = "ef928475-9403-42f2-8a34-55784bd08e16"
 	Branch        = "master"
-	Version       = "0.0.1 - BETA"
+	Version       = "0.0.2 - BETA"
 )
 
 type GQLPersistedOperation struct {

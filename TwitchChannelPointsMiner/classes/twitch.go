@@ -34,6 +34,13 @@ type Twitch struct {
 	spadeRegex     *regexp.Regexp
 }
 
+type ClaimedDrop struct {
+	RewardName    string
+	CampaignName  string
+	CurrentValue  int
+	RequiredValue int
+}
+
 func NewTwitch(username, userAgent, password string) (*Twitch, error) {
 	deviceID := randomString(32)
 	login, err := NewTwitchLogin(constants.ClientID, deviceID, username, userAgent, password)
@@ -394,29 +401,125 @@ func (t *Twitch) ClaimDrop(dropInstanceID string) (bool, error) {
 	}
 }
 
-func (t *Twitch) ClaimAllDropsFromInventory() error {
+func (t *Twitch) ClaimAllDropsFromInventory() ([]ClaimedDrop, error) {
+	var claimedDrops []ClaimedDrop
 	inv := t.inventory()
 	if inv == nil {
-		return nil
+		return claimedDrops, nil
 	}
 	active, _ := inv["dropCampaignsInProgress"].([]interface{})
+	var claimErr error
 	for _, c := range active {
-		campaign := c.(map[string]interface{})
+		campaign, ok := c.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		campaignName := campaignNameFromInventory(campaign)
 		td, _ := campaign["timeBasedDrops"].([]interface{})
 		for _, d := range td {
-			inner := d.(map[string]interface{})
-			self := inner["self"].(map[string]interface{})
-			claimed, _ := self["isClaimed"].(bool)
-			if id, ok := self["dropInstanceID"].(string); ok && id != "" && !claimed {
-				ok, err := t.ClaimDrop(id)
-				if err == nil && ok {
-					// TODO: log claimed drop
-					time.Sleep(time.Duration(randomInt(5, 10)) * time.Second)
+			inner, ok := d.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			self, _ := inner["self"].(map[string]interface{})
+			if self == nil {
+				continue
+			}
+			alreadyClaimed, _ := self["isClaimed"].(bool)
+			id, _ := self["dropInstanceID"].(string)
+			if id == "" || alreadyClaimed {
+				continue
+			}
+			rewardName := rewardNameFromInventory(inner)
+			current, required := dropProgress(inner, self)
+			ok, err := t.ClaimDrop(id)
+			if err != nil {
+				if claimErr == nil {
+					claimErr = err
 				}
+				continue
+			}
+			if ok {
+				claimedDrops = append(claimedDrops, ClaimedDrop{
+					RewardName:    rewardName,
+					CampaignName:  campaignName,
+					CurrentValue:  current,
+					RequiredValue: required,
+				})
+				time.Sleep(time.Duration(randomInt(5, 10)) * time.Second)
 			}
 		}
 	}
-	return nil
+	return claimedDrops, claimErr
+}
+
+func campaignNameFromInventory(campaign map[string]interface{}) string {
+	if campaign == nil {
+		return ""
+	}
+	if name := mapStringValue(campaign, "name", "displayName", "gameDisplayName"); name != "" {
+		return name
+	}
+	if name, _ := navigate(campaign, "game.displayName").(string); name != "" {
+		return name
+	}
+	if name, _ := navigate(campaign, "game.name").(string); name != "" {
+		return name
+	}
+	return ""
+}
+
+func rewardNameFromInventory(drop map[string]interface{}) string {
+	if drop == nil {
+		return ""
+	}
+	if benefit, ok := drop["benefit"].(map[string]interface{}); ok {
+		if name := mapStringValue(benefit, "name", "displayName"); name != "" {
+			return name
+		}
+	}
+	if name := mapStringValue(drop, "name", "displayName"); name != "" {
+		return name
+	}
+	if name, _ := navigate(drop, "benefit.edges.0.node.name").(string); name != "" {
+		return name
+	}
+	return ""
+}
+
+func dropProgress(drop map[string]interface{}, self map[string]interface{}) (int, int) {
+	current := mapIntValue(self, "currentMinutesWatched", "currentSecondsWatched", "currentProgress", "currentAmount")
+	required := mapIntValue(drop, "requiredMinutesWatched", "requiredSecondsWatched", "requiredProgress", "requiredAmount")
+	if required == 0 {
+		required = mapIntValue(self, "requiredMinutesWatched", "requiredSecondsWatched")
+	}
+	return current, required
+}
+
+func mapStringValue(data map[string]interface{}, keys ...string) string {
+	if data == nil {
+		return ""
+	}
+	for _, key := range keys {
+		if val, ok := data[key].(string); ok && val != "" {
+			return val
+		}
+	}
+	return ""
+}
+
+func mapIntValue(data map[string]interface{}, keys ...string) int {
+	if data == nil {
+		return 0
+	}
+	for _, key := range keys {
+		if val, ok := data[key]; ok {
+			if intVal := int(fromFloat(val)); intVal != 0 {
+				return intVal
+			}
+		}
+	}
+	return 0
 }
 
 // ? Fetch campaign IDs for a streamer if drops enabled.

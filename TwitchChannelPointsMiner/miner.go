@@ -123,8 +123,10 @@ func (m *Miner) run(streamers []string, useFollowers bool, order entities.Follow
 	}
 
 	if m.ClaimDropsStartup {
-		if err := m.twitch.ClaimAllDropsFromInventory(); err != nil {
+		if drops, err := m.twitch.ClaimAllDropsFromInventory(); err != nil {
 			m.logger.Printf("startup drop claim failed: %v", err)
+		} else {
+			m.logClaimedDrops(drops)
 		}
 	}
 
@@ -148,12 +150,30 @@ func (m *Miner) dropClaimer(stop <-chan struct{}) {
 	for {
 		select {
 		case <-ticker.C:
-			if err := m.twitch.ClaimAllDropsFromInventory(); err != nil {
+			if drops, err := m.twitch.ClaimAllDropsFromInventory(); err != nil {
 				m.logger.Printf("drop claim failed: %v", err)
+			} else {
+				m.logClaimedDrops(drops)
 			}
 		case <-stop:
 			return
 		}
+	}
+}
+
+func (m *Miner) logClaimedDrops(drops []classpkg.ClaimedDrop) {
+	for _, drop := range drops {
+		reward := drop.RewardName
+		if reward == "" {
+			reward = "Drop"
+		}
+		campaign := drop.CampaignName
+		if campaign == "" {
+			campaign = "Unknown Campaign"
+		}
+		progress := formatDropProgress(drop.CurrentValue, drop.RequiredValue)
+		percent := progressPercent(drop.CurrentValue, drop.RequiredValue)
+		m.logger.EmojiPrintf(":package:", "Claim %s (%s) %s (%d%%)", reward, campaign, progress, percent)
 	}
 }
 
@@ -219,7 +239,8 @@ func (m *Miner) shutdown(sessionID string) {
 	fmt.Println()
 	fmt.Println()
 	m.logger.EmojiPrintf(":stop_sign:", "Ending session: '%s'", sessionID)
-	m.logger.EmojiPrintf(":hourglass:", "Duration %s", time.Since(m.startedAt))
+	duration := formatDuration(time.Since(m.startedAt))
+	m.logger.EmojiPrintf(":hourglass:", "Duration %s", duration)
 	for _, s := range m.streamers {
 		initial := m.initialPoints[s.Username]
 		total := s.ChannelPoints - initial
@@ -233,7 +254,8 @@ func (m *Miner) shutdown(sessionID string) {
 			sign = "-"
 			total = -total
 		}
-		m.logger.EmojiPrintf(":moneybag:", "%s (%s%.2fk%s points), Total Points %s%s%d%s", displayName(s.Username), colorCyan, float64(s.ChannelPoints)/1000, colorReset, signColor, sign, total, colorReset)
+		points := formatChannelPoints(s.ChannelPoints)
+		m.logger.EmojiPrintf(":moneybag:", "%s (%s%s%s points), Total Points %s%s%d%s", displayName(s.Username), colorCyan, points, colorReset, signColor, sign, total, colorReset)
 		if s.History != nil {
 			for reason, entry := range s.History {
 				m.logger.Printf("                         %s (%d times, %d gained)", reason, entry.Count, entry.Amount)
@@ -271,12 +293,14 @@ func (m *Miner) updatePresence(streamer *entities.Streamer) {
 func (m *Miner) logOnline(streamer *entities.Streamer) {
 	name := displayName(streamer.Username)
 	m.logger.EmojiPrintf(":speech_balloon:", "Join IRC Chat: %s", streamer.Username)
-	m.logger.EmojiPrintf(":partying_face:", "%s (%s%d%s points) is %sOnline%s!", name, colorCyan, streamer.ChannelPoints, colorReset, colorGreen, colorReset)
+	points := formatChannelPoints(streamer.ChannelPoints)
+	m.logger.EmojiPrintf(":partying_face:", "%s (%s%s%s points) is %sOnline%s!", name, colorCyan, points, colorReset, colorGreen, colorReset)
 }
 
 func (m *Miner) logOffline(streamer *entities.Streamer) {
 	name := displayName(streamer.Username)
-	m.logger.EmojiPrintf(":sleeping:", "%s (%s%d%s points) is %sOffline%s!", name, colorCyan, streamer.ChannelPoints, colorReset, colorRed, colorReset)
+	points := formatChannelPoints(streamer.ChannelPoints)
+	m.logger.EmojiPrintf(":sleeping:", "%s (%s%s%s points) is %sOffline%s!", name, colorCyan, points, colorReset, colorRed, colorReset)
 }
 
 func displayName(name string) string {
@@ -284,6 +308,77 @@ func displayName(name string) string {
 		return ""
 	}
 	return strings.ToUpper(name[:1]) + name[1:]
+}
+
+func formatChannelPoints(points int) string {
+	value := points
+	if value < 0 {
+		value = -value
+	}
+	switch {
+	case value >= 1_000_000:
+		return formatPointsWithSuffix(value, 1_000_000, "M")
+	case value >= 1_000:
+		return formatPointsWithSuffix(value, 1_000, "k")
+	default:
+		return fmt.Sprintf("%d", value)
+	}
+}
+
+func formatPointsWithSuffix(points int, divisor float64, suffix string) string {
+	short := float64(points) / divisor
+	formatted := fmt.Sprintf("%.2f", short)
+	formatted = strings.TrimRight(strings.TrimRight(formatted, "0"), ".")
+	return formatted + suffix
+}
+
+func formatDropProgress(current, required int) string {
+	if required > 0 {
+		return fmt.Sprintf("%d/%d", current, required)
+	}
+	return fmt.Sprintf("%d", current)
+}
+
+func progressPercent(current, required int) int {
+	if required <= 0 {
+		if current > 0 {
+			return 100
+		}
+		return 0
+	}
+	percent := (current * 100) / required
+	if percent < 0 {
+		return 0
+	}
+	return percent
+}
+
+func formatDuration(d time.Duration) string {
+	if d < 0 {
+		d = -d
+	}
+	d = d.Round(time.Second)
+	day := 24 * time.Hour
+	days := d / day
+	d -= days * day
+	hours := d / time.Hour
+	d -= hours * time.Hour
+	minutes := d / time.Minute
+	d -= minutes * time.Minute
+	seconds := d / time.Second
+
+	parts := make([]string, 0, 4)
+	if days > 0 {
+		parts = append(parts, fmt.Sprintf("%dd", days))
+	}
+	if hours > 0 || len(parts) > 0 {
+		parts = append(parts, fmt.Sprintf("%02dh", hours))
+	}
+	if minutes > 0 || len(parts) > 0 {
+		parts = append(parts, fmt.Sprintf("%02dm", minutes))
+	}
+	parts = append(parts, fmt.Sprintf("%02ds", seconds))
+	return strings.Join(parts, " ")
 }
 
 func (m *Miner) handlePointsUpdate(streamer *entities.Streamer, previous int, reason string) {
@@ -300,6 +395,7 @@ func (m *Miner) logPointsDelta(streamer *entities.Streamer, delta int, reason st
 		return
 	}
 	name := displayName(streamer.Username)
+	points := formatChannelPoints(streamer.ChannelPoints)
 	sign := "+"
 	valueColor := colorGreen
 	if delta < 0 {
@@ -312,14 +408,14 @@ func (m *Miner) logPointsDelta(streamer *entities.Streamer, delta int, reason st
 	}
 	m.logger.EmojiPrintf(
 		":rocket:",
-		"%s%s%d%s → %s (%s%.2fk%s points) - Reason: %s",
+		"%s%s%d%s → %s (%s%s%s points) - Reason: %s",
 		valueColor,
 		sign,
 		delta,
 		colorReset,
 		name,
 		colorCyan,
-		float64(streamer.ChannelPoints)/1000,
+		points,
 		colorReset,
 		reason,
 	)

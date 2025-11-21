@@ -55,6 +55,16 @@ func clearConsole() {
 	_ = c.Run()
 }
 
+func setConsoleTitle(title string) {
+	if runtime.GOOS != "windows" {
+		return
+	}
+	cmd := exec.Command("cmd", "/c", fmt.Sprintf("title %s", title))
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	_ = cmd.Run()
+}
+
 func defaultConfig() map[string]interface{} {
 	return map[string]interface{}{
 		"username":                      "your-twitch-username",
@@ -136,6 +146,7 @@ func loadOrCreateConfig(path string) (config, error) {
 }
 
 func main() {
+	setConsoleTitle("Klaro's Twitch Miner")
 	clearConsole()
 	cfg, err := loadOrCreateConfig("config.json")
 	if err != nil {
