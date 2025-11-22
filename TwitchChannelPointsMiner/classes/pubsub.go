@@ -479,15 +479,30 @@ func (p *PubSubClient) placePrediction(eventID string) {
 	if !ok || event == nil || event.Streamer == nil {
 		return
 	}
-	if event.Status != "ACTIVE" {
-		return
-	}
 	streamer := event.Streamer
-	decision := event.Decide(streamer.ChannelPoints)
-	if streamer.Settings.Bet.MinimumPoints != nil && streamer.ChannelPoints <= *streamer.Settings.Bet.MinimumPoints {
+	if event.Status != "ACTIVE" {
+		p.logger.Printf("Skip bet for %s: event status is %s", streamer.Username, event.Status)
 		return
 	}
-	if decision.Amount < 10 || decision.OutcomeID == "" {
+	if streamer.Settings.Bet.MinimumPoints != nil && streamer.ChannelPoints <= *streamer.Settings.Bet.MinimumPoints {
+		p.logger.Printf("Skip bet for %s: balance %d <= minimum_points %d", streamer.Username, streamer.ChannelPoints, *streamer.Settings.Bet.MinimumPoints)
+		return
+	}
+	decision := event.Decide(streamer.ChannelPoints)
+	if decision.OutcomeID == "" {
+		p.logger.Printf("Skip bet for %s: no outcome selected", streamer.Username)
+		return
+	}
+	if decision.Amount < 10 {
+		reason := fmt.Sprintf("balance %d below Twitch minimum 10", streamer.ChannelPoints)
+		if streamer.ChannelPoints >= 10 {
+			if streamer.Settings.Bet.MaxPoints != nil && *streamer.Settings.Bet.MaxPoints < 10 {
+				reason = fmt.Sprintf("max_points %d below Twitch minimum 10", *streamer.Settings.Bet.MaxPoints)
+			} else {
+				reason = fmt.Sprintf("calculated stake %d below Twitch minimum", decision.Amount)
+			}
+		}
+		p.logger.Printf("Skip bet for %s: %s", streamer.Username, reason)
 		return
 	}
 	if err := p.twitch.MakePrediction(event); err != nil {

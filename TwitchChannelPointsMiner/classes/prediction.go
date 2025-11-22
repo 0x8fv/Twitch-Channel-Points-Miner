@@ -128,6 +128,7 @@ func (p *PredictionEvent) Decide(balance int) PredictionDecision {
 	if choice < 0 || choice >= len(p.Outcomes) {
 		return decision
 	}
+
 	percentage := 5
 	if settings.Percentage != nil {
 		percentage = *settings.Percentage
@@ -136,10 +137,20 @@ func (p *PredictionEvent) Decide(balance int) PredictionDecision {
 	if settings.MaxPoints != nil && amount > *settings.MaxPoints {
 		amount = *settings.MaxPoints
 	}
+	if amount > balance {
+		amount = balance
+	}
 	if settings.StealthMode != nil && *settings.StealthMode && p.Outcomes[choice].TopPoints > 0 && amount >= p.Outcomes[choice].TopPoints {
 		amount = p.Outcomes[choice].TopPoints - 1
 		if amount < 1 {
 			amount = 1
+		}
+	}
+	if amount < 10 {
+		if settings.MaxPoints != nil && *settings.MaxPoints < 10 {
+			amount = *settings.MaxPoints
+		} else if balance >= 10 {
+			amount = 10
 		}
 	}
 

@@ -28,6 +28,7 @@ type betConfig struct {
 type config struct {
 	Username                   string    `json:"username"`
 	Password                   string    `json:"password"`
+	AutoUpdate                 bool      `json:"auto_update"`
 	SmartLogging               bool      `json:"smart_logging"`
 	DisableSSLCertVerification bool      `json:"disable_ssl_cert_verification"`
 	ShowSeconds                bool      `json:"show_seconds"`
@@ -71,6 +72,7 @@ func defaultConfig() map[string]interface{} {
 	return map[string]interface{}{
 		"username":                      "your-twitch-username",
 		"password":                      "your-twitch-password (Optional)",
+		"auto_update":                   true,
 		"smart_logging":                 true,
 		"disable_ssl_cert_verification": false,
 		"show_seconds":                  false,
@@ -159,6 +161,17 @@ func main() {
 	cfg, err := loadOrCreateConfig("config.json")
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
+	}
+
+	if cfg.AutoUpdate {
+		updated, err := miner.RunAutoUpdate(cfg.DisableSSLCertVerification)
+		if err != nil {
+			log.Printf("auto-update failed: %v", err)
+		}
+		if updated {
+			log.Printf("auto-update installed a newer version; restarting...")
+			return
+		}
 	}
 
 	betSettings := entities.BetSettings{
