@@ -23,6 +23,11 @@ import (
 
 var ErrStreamerOffline = errors.New("streamer offline")
 
+type debugLogger interface {
+	Debugf(format string, args ...interface{})
+	DebugEnabled() bool
+}
+
 type Twitch struct {
 	userAgent      string
 	deviceID       string
@@ -33,6 +38,7 @@ type Twitch struct {
 	twilightRegexp *regexp.Regexp
 	settingsRegex  *regexp.Regexp
 	spadeRegex     *regexp.Regexp
+	logger         debugLogger
 }
 
 type ClaimedDrop struct {
@@ -42,7 +48,7 @@ type ClaimedDrop struct {
 	RequiredValue int
 }
 
-func NewTwitch(username, userAgent, password string) (*Twitch, error) {
+func NewTwitch(username, userAgent, password string, logger debugLogger) (*Twitch, error) {
 	deviceID := randomString(32)
 	login, err := NewTwitchLogin(constants.ClientID, deviceID, username, userAgent, password)
 	if err != nil {
@@ -59,6 +65,7 @@ func NewTwitch(username, userAgent, password string) (*Twitch, error) {
 		twilightRegexp: regexp.MustCompile(`window\.__twilightBuildID\s*=\s*"([0-9a-fA-F\-]{36})"`),
 		settingsRegex:  regexp.MustCompile(`(https://static\.twitchcdn\.net/config/settings.*?\.js|https://assets\.twitch\.tv/config/settings.*?\.js)`),
 		spadeRegex:     regexp.MustCompile(`"spade_url":"(.*?)"`),
+		logger:         logger,
 	}, nil
 }
 
@@ -70,6 +77,12 @@ func (t *Twitch) Login(username string) error {
 	return nil
 }
 
+func (t *Twitch) debugf(format string, args ...interface{}) {
+	if t.logger != nil && t.logger.DebugEnabled() {
+		t.logger.Debugf(format, args...)
+	}
+}
+
 // ? UpdateClientVersion refreshes the Twitch build id used for GQL calls.
 func (t *Twitch) UpdateClientVersion() string {
 	resp, err := t.client.Get(constants.URL)
@@ -78,9 +91,16 @@ func (t *Twitch) UpdateClientVersion() string {
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.debugf("UpdateClientVersion request failed with status %d", resp.StatusCode)
+		return t.clientVersion
+	}
 	m := t.twilightRegexp.FindStringSubmatch(string(body))
 	if len(m) > 1 {
 		t.clientVersion = m[1]
+		t.debugf("Client version updated to %s", t.clientVersion)
+	} else {
+		t.debugf("UpdateClientVersion: unable to extract build id")
 	}
 	return t.clientVersion
 }
@@ -101,11 +121,17 @@ func (t *Twitch) PostGQL(payload interface{}) (map[string]interface{}, error) {
 
 	resp, err := t.client.Do(req)
 	if err != nil {
+		t.debugf("GQL request failed: %v", err)
 		return nil, err
 	}
-	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	t.debugf("GQL %s | Status %d | Request: %s | Response: %s", operationName(payload), resp.StatusCode, strings.TrimSpace(string(body)), strings.TrimSpace(string(respBody)))
 	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, err
 	}
 	return result, nil
@@ -327,6 +353,7 @@ func (t *Twitch) GetSpadeURL(streamer *entities.Streamer) error {
 	if err != nil {
 		return err
 	}
+	t.debugf("GetSpadeURL main page for %s status %d", streamer.Username, resp.StatusCode)
 	match := t.settingsRegex.FindStringSubmatch(string(body))
 	if len(match) < 2 {
 		return errors.New("settings script not found")
@@ -344,11 +371,13 @@ func (t *Twitch) GetSpadeURL(streamer *entities.Streamer) error {
 	if err != nil {
 		return err
 	}
+	t.debugf("GetSpadeURL settings for %s status %d", streamer.Username, settingsResp.StatusCode)
 	spade := t.spadeRegex.FindStringSubmatch(string(settingsBody))
 	if len(spade) < 2 {
 		return errors.New("spade url not found")
 	}
 	streamer.Stream.SpadeURL = spade[1]
+	t.debugf("Spade URL for %s resolved to %s", streamer.Username, streamer.Stream.SpadeURL)
 	return nil
 }
 
@@ -371,17 +400,19 @@ func (t *Twitch) SendMinuteWatched(streamer *entities.Streamer) error {
 	req, _ := http.NewRequest(http.MethodPost, streamer.Stream.SpadeURL, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", t.userAgent)
+	t.debugf("Send minute watched payload to %s (%s)", streamer.Username, streamer.Stream.SpadeURL)
 	resp, err := t.client.Do(req)
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	t.debugf("Minute watched response for %s: %d %s", streamer.Username, resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
 	if resp.StatusCode == http.StatusNoContent {
 		streamer.Stream.UpdateMinuteWatched()
 		return nil
 	}
-	body, _ := io.ReadAll(resp.Body)
-	return fmt.Errorf("minute watched failed: %d %s", resp.StatusCode, string(body))
+	return fmt.Errorf("minute watched failed: %d %s", resp.StatusCode, string(bodyBytes))
 }
 
 // ? ClaimBonus redeems the community points bonus (blue chest).
@@ -724,6 +755,24 @@ func (t *Twitch) inventory() map[string]interface{} {
 		return nil
 	}
 	return inv.(map[string]interface{})
+}
+
+func operationName(payload interface{}) string {
+	switch p := payload.(type) {
+	case map[string]interface{}:
+		if name, ok := p["operationName"].(string); ok && name != "" {
+			return name
+		}
+	case []interface{}:
+		for _, raw := range p {
+			if m, ok := raw.(map[string]interface{}); ok {
+				if name, ok := m["operationName"].(string); ok && name != "" {
+					return name
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func randomString(length int) string {

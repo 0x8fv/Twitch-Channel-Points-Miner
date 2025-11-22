@@ -20,6 +20,7 @@ type LoggerSettings struct {
 	ConsoleUsername  bool `json:"console_username"`
 	ShowClaimedBonus bool `json:"show_claimed_bonus_msg"`
 	Less             bool `json:"less"`
+	Debug            bool `json:"debug"`
 }
 
 type Logger struct {
@@ -66,6 +67,9 @@ func sanitizeFilename(name string) string {
 }
 
 func (l *Logger) log(level, emoji, format string, args ...interface{}) {
+	if level == "DEBUG" && !l.settings.Debug {
+		return
+	}
 	message := fmt.Sprintf(format, args...)
 	if emoji != "" && l.settings.Emoji {
 		message = fmt.Sprintf("%s %s", emojize(emoji), message)
@@ -97,6 +101,14 @@ func (l *Logger) Fatalf(format string, args ...interface{}) {
 
 func (l *Logger) EmojiPrintf(emoji, format string, args ...interface{}) {
 	l.log("INFO", emoji, format, args...)
+}
+
+func (l *Logger) Debugf(format string, args ...interface{}) {
+	l.log("DEBUG", "", format, args...)
+}
+
+func (l *Logger) DebugEnabled() bool {
+	return l.settings.Debug
 }
 
 var emojiMap = map[string]string{

@@ -129,7 +129,7 @@ func (m *Miner) run(streamers []string, useFollowers bool, order entities.Follow
 	m.stop = make(chan struct{})
 	m.initialPoints = make(map[string]int)
 
-	tw, err := classpkg.NewTwitch(m.Username, utils.GetUserAgent("CHROME"), m.Password)
+	tw, err := classpkg.NewTwitch(m.Username, utils.GetUserAgent("CHROME"), m.Password, m.logger)
 	if err != nil {
 		m.logger.Fatalf("failed to create twitch client: %v", err)
 	}

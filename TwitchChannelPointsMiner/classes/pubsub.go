@@ -18,6 +18,8 @@ type Logger interface {
 	Printf(format string, args ...interface{})
 	Errorf(format string, args ...interface{})
 	EmojiPrintf(emoji, format string, args ...interface{})
+	Debugf(format string, args ...interface{})
+	DebugEnabled() bool
 }
 
 type PubSubClient struct {
@@ -29,6 +31,12 @@ type PubSubClient struct {
 	predMu      sync.Mutex
 	onGain      func(streamer *entities.Streamer, earned int, reason string, balance int)
 	onPresence  func(streamer *entities.Streamer, online bool, reason string)
+}
+
+func (p *PubSubClient) debugf(format string, args ...interface{}) {
+	if p.logger != nil && p.logger.DebugEnabled() {
+		p.logger.Debugf(format, args...)
+	}
 }
 
 func NewPubSubClient(
@@ -109,6 +117,7 @@ func (p *PubSubClient) connectAndListen(connIndex int, topics []string, stop <-c
 				readErr <- err
 				return
 			}
+			p.debugf("PubSub[%d] recv: %s", connIndex, strings.TrimSpace(string(message)))
 			if err := p.handleMessage(message, func() { lastPong = time.Now() }); err != nil {
 				p.logger.Errorf("PubSub message error: %v", err)
 			}
@@ -201,6 +210,7 @@ func (p *PubSubClient) listenTopics(conn *websocket.Conn, topics []string) error
 			"nonce": randomString(16),
 			"data":  data,
 		}
+		p.debugf("PubSub LISTEN %s", t)
 		if err := conn.WriteJSON(payload); err != nil {
 			return err
 		}
@@ -239,6 +249,7 @@ func (p *PubSubClient) handleTopicMessage(envelope map[string]interface{}) error
 	if messageStr == "" {
 		return nil
 	}
+	p.debugf("PubSub topic %s payload %s", topic, strings.TrimSpace(messageStr))
 	var payload map[string]interface{}
 	if err := json.Unmarshal([]byte(messageStr), &payload); err != nil {
 		return err
