@@ -142,8 +142,19 @@ func downloadAsset(url, dir string, disableSSL bool) (string, error) {
 	}
 	defer temp.Close()
 
-	if _, err := io.Copy(temp, resp.Body); err != nil {
+	var reader io.Reader = resp.Body
+	var progress *progressWriter
+	if resp.ContentLength > 0 {
+		log.Printf("auto-update: downloading update (%.1f MB)...", bytesToMB(resp.ContentLength))
+		progress = newProgressWriter(resp.ContentLength)
+		reader = io.TeeReader(resp.Body, progress)
+	}
+
+	if _, err := io.Copy(temp, reader); err != nil {
 		return "", err
+	}
+	if progress != nil {
+		progress.Done()
 	}
 
 	return temp.Name(), nil
@@ -172,20 +183,22 @@ func launchWindowsUpdater(targetPath, newPath string, args []string) error {
 	argString := formatArgs(args)
 	script := fmt.Sprintf(`@echo off
 setlocal
-set TARGET=%q
-set NEWFILE=%q
-set WORKDIR=%q
+set "TARGET=%s"
+set "NEWFILE=%s"
+set "WORKDIR=%s"
 cd /D "%%WORKDIR%%"
+:wait
+ping 127.0.0.1 -n 2 >nul 2>nul
 :loop
 move /Y "%%NEWFILE%%" "%%TARGET%%" >nul 2>nul
 if errorlevel 1 (
-  timeout /T 2 /NOBREAK >nul
+  ping 127.0.0.1 -n 3 >nul 2>nul
   goto loop
 )
 start "" /b "%%TARGET%%"%s
 start "" /b cmd /c "del /q ""%%~f0"""
 exit /b
-`, targetPath, newPath, filepath.Dir(targetPath), argString)
+`, escapeForBatch(targetPath), escapeForBatch(newPath), escapeForBatch(filepath.Dir(targetPath)), argString)
 
 	if err := os.WriteFile(scriptPath, []byte(script), 0o644); err != nil {
 		return fmt.Errorf("write updater script: %w", err)
@@ -276,4 +289,68 @@ func isGoRunExecutable(path string) bool {
 	}
 	temp := strings.ToLower(os.TempDir())
 	return strings.HasPrefix(lower, temp)
+}
+
+type progressWriter struct {
+	total   int64
+	written int64
+	step    int64
+}
+
+func newProgressWriter(total int64) *progressWriter {
+	step := total / 20 // ? ~5% steps
+	if step == 0 {
+		step = total
+	}
+	return &progressWriter{total: total, step: step}
+}
+
+func (p *progressWriter) Write(b []byte) (int, error) {
+	n := len(b)
+	p.written += int64(n)
+	if p.total > 0 && p.written >= p.step {
+		p.logProgress()
+		for p.written >= p.step {
+			p.step += p.total / 20
+			if p.total/20 == 0 {
+				p.step = p.written + 1
+			}
+		}
+	}
+	return n, nil
+}
+
+func (p *progressWriter) Done() {
+	if p.total > 0 && p.written < p.total {
+		p.written = p.total
+	}
+	p.logProgress()
+}
+
+func (p *progressWriter) logProgress() {
+	if p.total == 0 {
+		return
+	}
+	percent := float64(p.written) * 100 / float64(p.total)
+	if percent > 100 {
+		percent = 100
+	}
+	log.Printf("auto-update: download %.0f%% (%.1f/%.1f MB)", percent, bytesToMB(p.written), bytesToMB(p.total))
+}
+
+func bytesToMB(b int64) float64 {
+	return float64(b) / (1024 * 1024)
+}
+
+func escapeForBatch(path string) string {
+	replacer := strings.NewReplacer(
+		"^", "^^",
+		"&", "^&",
+		"|", "^|",
+		"<", "^<",
+		">", "^>",
+		"%", "%%",
+		"\"", "\"\"",
+	)
+	return replacer.Replace(path)
 }
