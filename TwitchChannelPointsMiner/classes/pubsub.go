@@ -3,6 +3,7 @@ package classes
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -303,6 +304,10 @@ func (p *PubSubClient) processRaidMessage(topic string, payload map[string]inter
 	if raidID == "" {
 		return nil
 	}
+	if streamer.LastRaidID == raidID {
+		return nil
+	}
+	streamer.LastRaidID = raidID
 	if err := p.twitch.JoinRaid(streamer, raidID); err != nil {
 		p.logger.Errorf("join raid %s->%s: %v", streamer.Username, target, err)
 		return nil
@@ -401,10 +406,9 @@ func (p *PubSubClient) processPredictionChannel(topic string, payload map[string
 	eventID, _ := eventMap["id"].(string)
 	status := strings.ToUpper(stringOrDefault(eventMap["status"]))
 
-	p.predMu.Lock()
-	defer p.predMu.Unlock()
+	msgType := strings.ToLower(fmt.Sprint(payload["type"]))
 
-	switch strings.ToLower(fmt.Sprint(payload["type"])) {
+	switch msgType {
 	case "event-created":
 		if status != "ACTIVE" || eventID == "" {
 			return nil
@@ -419,19 +423,26 @@ func (p *PubSubClient) processPredictionChannel(topic string, payload map[string
 			return nil
 		}
 		wait := event.ClosingAfter(time.Now())
+		p.predMu.Lock()
 		p.predictions[event.EventID] = event
+		p.predMu.Unlock()
 		time.AfterFunc(wait, func() {
 			p.placePrediction(event.EventID)
 		})
 		p.logger.EmojiPrintf(":alarm_clock:", "Place bet after %s for %s", wait.Truncate(time.Second), streamer.Username)
 	case "event-updated":
-		if existing, ok := p.predictions[eventID]; ok {
+		var existing *PredictionEvent
+		p.predMu.Lock()
+		if ev, ok := p.predictions[eventID]; ok {
+			existing = ev
 			existing.Status = status
-			if !existing.BetPlaced {
-				if outcomes, ok := eventMap["outcomes"].([]interface{}); ok {
-					existing.UpdateOutcomes(outcomes)
-				}
+			if outcomes, ok := eventMap["outcomes"].([]interface{}); ok {
+				existing.UpdateOutcomes(outcomes)
 			}
+		}
+		p.predMu.Unlock()
+		if existing != nil {
+			p.resolvePredictionFromChannel(existing, eventMap)
 		}
 	}
 	return nil
@@ -459,12 +470,14 @@ func (p *PubSubClient) processPredictionUser(payload map[string]interface{}) err
 		event.BetConfirmed = true
 	case "prediction-result":
 		result, _ := predictionData["result"].(map[string]interface{})
-		gained, placed, won, resultType := event.ParseResult(result)
-		streamer := event.Streamer
-		p.logger.EmojiPrintf(":bar_chart:", "%s result %s | placed %d, won %d, delta %+d", streamer.Username, resultType, placed, won, gained)
-		if streamer != nil && gained != 0 {
-			recordHistory(streamer, "PREDICTION", gained)
+		if result == nil {
+			return nil
 		}
+		if !event.BetConfirmed {
+			// ? Assume confirmation if Twitch skipped sending prediction-made
+			event.BetConfirmed = true
+		}
+		p.logPredictionResult(event, result)
 		p.predMu.Lock()
 		delete(p.predictions, eventID)
 		p.predMu.Unlock()
@@ -510,7 +523,13 @@ func (p *PubSubClient) placePrediction(eventID string) {
 		return
 	}
 	event.BetPlaced = true
-	p.logger.EmojiPrintf(":four_leaf_clover:", "Place %d points on %s for %s", decision.Amount, decision.OutcomeID, streamer.Username)
+	// Ensure we log results even if Twitch doesn't emit prediction-made
+	event.BetConfirmed = true
+	outcome := event.DecisionOutcomeString()
+	if outcome == "" {
+		outcome = decision.OutcomeID
+	}
+	p.logger.EmojiPrintf(":four_leaf_clover:", "Place %s points on: %s for %s", formatNumber(decision.Amount), outcome, streamer.Username)
 	recordHistory(streamer, "PREDICTION", -decision.Amount)
 }
 
@@ -577,4 +596,128 @@ func recordHistory(streamer *entities.Streamer, reason string, amount int) {
 	}
 	entry.Count++
 	entry.Amount += amount
+}
+
+func (p *PubSubClient) logPredictionResult(event *PredictionEvent, result map[string]interface{}) {
+	if event == nil || result == nil {
+		return
+	}
+	gained, placed, won, resultType, resultString := event.ParseResult(result)
+	event.BetConfirmed = true
+	decisionLabel := event.DecisionLabel()
+	if decisionLabel == "" {
+		decisionLabel = fmt.Sprintf("Decision #%d", event.Decision.Choice+1)
+	}
+	color := constants.ColorGreen
+	if gained < 0 {
+		color = constants.ColorRed
+	} else if gained == 0 {
+		color = constants.ColorReset
+	}
+	p.logger.EmojiPrintf(
+		":bar_chart:",
+		"%s - Decision: %s - Result: %s%s%s",
+		event.String(),
+		decisionLabel,
+		color,
+		resultString,
+		constants.ColorReset,
+	)
+	if streamer := event.Streamer; streamer != nil {
+		if gained != 0 {
+			recordHistory(streamer, "PREDICTION", gained)
+		}
+		if resultType == "REFUND" && placed > 0 {
+			recordHistory(streamer, "REFUND", -placed)
+		} else if resultType == "WIN" && won > 0 {
+			recordHistory(streamer, "PREDICTION", -won)
+		}
+	}
+}
+
+func (p *PubSubClient) resolvePredictionFromChannel(event *PredictionEvent, eventMap map[string]interface{}) {
+	if event == nil || event.Decision.Amount == 0 || event.ResultType != "" {
+		return
+	}
+	status := strings.ToUpper(stringOrDefault(eventMap["status"]))
+	if status != "RESOLVED" && status != "CANCELED" && status != "CANCELLED" {
+		return
+	}
+
+	winningID := winningOutcomeID(eventMap)
+	resultType := "LOSE"
+	pointsWon := 0
+
+	switch status {
+	case "CANCELED", "CANCELLED":
+		resultType = "REFUND"
+	default:
+		if winningID == "" {
+			return
+		}
+		if event.Decision.OutcomeID == winningID {
+			resultType = "WIN"
+			pointsWon = payoutForOutcome(event.Decision, event.Outcomes, winningID)
+		}
+	}
+
+	p.logPredictionResult(event, map[string]interface{}{
+		"type":       resultType,
+		"points_won": pointsWon,
+	})
+
+	p.predMu.Lock()
+	delete(p.predictions, event.EventID)
+	p.predMu.Unlock()
+}
+
+func winningOutcomeID(event map[string]interface{}) string {
+	if id := stringOrDefault(event["winning_outcome_id"]); id != "" {
+		return id
+	}
+	if outcomes, ok := event["outcomes"].([]interface{}); ok {
+		for _, raw := range outcomes {
+			oc, ok := raw.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if win, ok := oc["is_winning_outcome"].(bool); ok && win {
+				if id := stringOrDefault(oc["id"]); id != "" {
+					return id
+				}
+			}
+			state := strings.ToUpper(stringOrDefault(oc["state"]))
+			if state == "RESOLVED" || state == "WINNER" || state == "WIN" {
+				if id := stringOrDefault(oc["id"]); id != "" {
+					return id
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func payoutForOutcome(decision PredictionDecision, outcomes []PredictionOutcome, winningID string) int {
+	if decision.Amount <= 0 || decision.OutcomeID != winningID {
+		return 0
+	}
+
+	totalPoints := 0
+	winPoints := 0
+	for _, oc := range outcomes {
+		totalPoints += oc.TotalPoints
+		if oc.ID == winningID {
+			winPoints = oc.TotalPoints
+		}
+	}
+
+	if totalPoints == 0 || winPoints == 0 {
+		return decision.Amount
+	}
+
+	payout := int(math.Round(float64(decision.Amount) * (float64(totalPoints) / float64(winPoints))))
+	if payout < decision.Amount {
+		return decision.Amount
+	}
+	return payout
 }

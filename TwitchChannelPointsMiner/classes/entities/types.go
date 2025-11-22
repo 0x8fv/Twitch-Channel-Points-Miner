@@ -70,6 +70,7 @@ type Streamer struct {
 	Stream            *Stream                  `json:"-"`
 	PointsInit        bool                     `json:"-"`
 	ActiveMultipliers []map[string]interface{} `json:"-"`
+	LastRaidID        string                   `json:"-"`
 	History           map[string]*HistoryEntry
 	CommunityGoals    map[string]*CommunityGoal `json:"-"`
 }

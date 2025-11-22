@@ -17,10 +17,10 @@ import (
 )
 
 const (
-	colorGreen = "\033[38;5;46m"
-	colorRed   = "\033[38;5;196m"
-	colorCyan  = "\033[38;5;14m"
-	colorReset = "\033[0m"
+	colorGreen = constants.ColorGreen
+	colorRed   = constants.ColorRed
+	colorCyan  = constants.ColorCyan
+	colorReset = constants.ColorReset
 )
 
 type watchPriority int

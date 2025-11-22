@@ -1,6 +1,7 @@
 package classes
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -39,6 +40,7 @@ type PredictionEvent struct {
 	BetPlaced     bool
 	BetConfirmed  bool
 	ResultType    string
+	ResultString  string
 }
 
 func NewPredictionEvent(streamer *entities.Streamer, event map[string]interface{}) *PredictionEvent {
@@ -164,7 +166,7 @@ func (p *PredictionEvent) Decide(balance int) PredictionDecision {
 	return decision
 }
 
-func (p *PredictionEvent) ParseResult(result map[string]interface{}) (gained, placed, won int, resultType string) {
+func (p *PredictionEvent) ParseResult(result map[string]interface{}) (gained, placed, won int, resultType, resultString string) {
 	resultType = strings.ToUpper(stringOrDefault(result["type"]))
 	placed = p.Decision.Amount
 	won = int(fromFloat(result["points_won"]))
@@ -174,7 +176,110 @@ func (p *PredictionEvent) ParseResult(result map[string]interface{}) (gained, pl
 	}
 	gained = won - placed
 	p.ResultType = resultType
+	action := "Gained"
+	switch resultType {
+	case "LOSE":
+		action = "Lost"
+	case "REFUND":
+		action = "Refunded"
+	}
+	sign := ""
+	if gained >= 0 {
+		sign = "+"
+	}
+	resultString = fmt.Sprintf("%s, %s: %s%s", resultType, action, sign, formatNumber(gained))
+	p.ResultString = resultString
 	return
+}
+
+func (p *PredictionEvent) String() string {
+	if p.Streamer != nil && p.Streamer.Username != "" {
+		return fmt.Sprintf("EventPrediction: %s - %s", p.Streamer.Username, p.Title)
+	}
+	if p.Title != "" {
+		return fmt.Sprintf("EventPrediction: %s", p.Title)
+	}
+	return "EventPrediction"
+}
+
+func (p *PredictionEvent) DecisionOutcome() *PredictionOutcome {
+	choice := p.Decision.Choice
+	if choice >= 0 && choice < len(p.Outcomes) {
+		return &p.Outcomes[choice]
+	}
+	for i := range p.Outcomes {
+		if p.Outcomes[i].ID == p.Decision.OutcomeID {
+			return &p.Outcomes[i]
+		}
+	}
+	return nil
+}
+
+func (p *PredictionEvent) DecisionOutcomeString() string {
+	if out := p.DecisionOutcome(); out != nil {
+		return out.String()
+	}
+	return p.Decision.OutcomeID
+}
+
+func (p *PredictionEvent) DecisionLabel() string {
+	out := p.DecisionOutcome()
+	if out == nil {
+		if p.Decision.OutcomeID != "" {
+			return fmt.Sprintf("%s: %s", choiceLabel(p.Decision.Choice), p.Decision.OutcomeID)
+		}
+		return ""
+	}
+	return fmt.Sprintf("%s: %s (%s)", choiceLabel(p.Decision.Choice), out.Title, strings.ToUpper(out.Color))
+}
+
+func (o PredictionOutcome) String() string {
+	return fmt.Sprintf(
+		"%s (%s), Points: %s, Users: %s (%.2f%%), Odds: %s (%s%%)",
+		strings.TrimSpace(o.Title),
+		strings.ToUpper(o.Color),
+		formatNumber(o.TotalPoints),
+		formatNumber(o.TotalUsers),
+		o.PercentageUsers,
+		formatFloat(o.Odds),
+		formatFloat(o.OddsPercentage),
+	)
+}
+
+func choiceLabel(choice int) string {
+	if choice >= 0 && choice < 26 {
+		return string(rune('A' + choice))
+	}
+	return fmt.Sprintf("#%d", choice+1)
+}
+
+func formatNumber(value int) string {
+	sign := ""
+	v := value
+	if v < 0 {
+		sign = "-"
+		v = -v
+	}
+	switch {
+	case v >= 1_000_000:
+		return sign + trimZeros(fmt.Sprintf("%.2fM", float64(v)/1_000_000))
+	case v >= 1_000:
+		return sign + trimZeros(fmt.Sprintf("%.2fk", float64(v)/1_000))
+	default:
+		return fmt.Sprintf("%s%d", sign, v)
+	}
+}
+
+func formatFloat(val float64) string {
+	return trimZeros(fmt.Sprintf("%.2f", val))
+}
+
+func trimZeros(val string) string {
+	val = strings.TrimRight(strings.TrimRight(val, "0"), ".")
+	if val == "" || val == "-" {
+		return "0"
+	}
+	return val
 }
 
 func selectOutcome(outcomes []PredictionOutcome, settings entities.BetSettings) int {

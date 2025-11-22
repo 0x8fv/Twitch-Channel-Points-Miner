@@ -47,7 +47,6 @@ func RunAutoUpdate(disableSSL bool) (bool, error) {
 	currentVersion := normalizeVersion(constants.Version)
 	latestVersion := normalizeVersion(release.TagName)
 	if compareVersions(latestVersion, currentVersion) <= 0 {
-		log.Printf("auto-update: already up to date (latest %s)", release.TagName)
 		return false, nil
 	}
 

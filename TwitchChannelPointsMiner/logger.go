@@ -101,6 +101,7 @@ func (l *Logger) EmojiPrintf(emoji, format string, args ...interface{}) {
 
 var emojiMap = map[string]string{
 	":alarm_clock:":            "⏰",
+	":bar_chart:":              "📊",
 	":four_leaf_clover:":       "🍀",
 	":rocket:":                 "🚀",
 	":moneybag:":               "💰",
