@@ -358,7 +358,7 @@ func (m *Miner) minuteWatcher(streamers []*entities.Streamer, stop <-chan struct
 						m.logger.Printf("minute watch %s: transient offline response, keeping online", styledStreamerName(streamer))
 					}
 				}
-				m.logger.Printf("minute watch %s: %v", styledStreamerName(streamer), err)
+				m.logger.Errorf("minute watch %s: %v", styledStreamerName(streamer), err)
 			}
 
 			if m.sleepWithStop(interval, stop) {
