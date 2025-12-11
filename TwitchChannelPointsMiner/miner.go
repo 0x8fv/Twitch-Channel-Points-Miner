@@ -420,6 +420,9 @@ func (m *Miner) gameSuffix(streamer *entities.Streamer) string {
 
 // func (m *Miner) gameInfo(streamer *entities.Streamer) (string, bool) {
 func (m *Miner) gameInfo(streamer *entities.Streamer) string {
+	if m == nil || !m.showGameInfo {
+		return ""
+	}
 	// hasDrops := m.showDropsIndicator && m.streamHasDrops(streamer)
 	// if !m.showGameInfo {
 	// 	return "", hasDrops
