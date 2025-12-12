@@ -10,6 +10,10 @@ func (s *stubChatLogger) Printf(format string, args ...interface{}) {
 	s.calls = append(s.calls, "printf")
 }
 
+func (s *stubChatLogger) Errorf(format string, args ...interface{}) {
+	s.calls = append(s.calls, "errorf")
+}
+
 func (s *stubChatLogger) EmojiPrintf(emoji, format string, args ...interface{}) {
 	s.calls = append(s.calls, "emoji:"+emoji)
 }

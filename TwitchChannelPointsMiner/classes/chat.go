@@ -14,6 +14,7 @@ import (
 
 type ChatLogger interface {
 	Printf(format string, args ...interface{})
+	Errorf(format string, args ...interface{})
 	EmojiPrintf(emoji, format string, args ...interface{})
 }
 
@@ -59,7 +60,7 @@ func (c *ChatClient) run() {
 	defer close(c.stopped)
 	for {
 		if err := c.connectAndListen(); err != nil && !c.isStopped() && c.logger != nil {
-			c.logger.Printf("chat #%s error: %v", c.channel, err)
+			c.logger.Errorf("chat #%s error: %v", c.channel, err)
 		}
 		if c.isStopped() {
 			return
