@@ -28,6 +28,16 @@ type betConfig struct {
 	MinimumPoints *int     `json:"minimum_points"`
 }
 
+type streamerSettingsConfig struct {
+	MakePredictions *bool     `json:"make_predictions"`
+	FollowRaid      *bool     `json:"follow_raid"`
+	ClaimDrops      *bool     `json:"claim_drops"`
+	ClaimMoments    *bool     `json:"claim_moments"`
+	WatchStreak     *bool     `json:"watch_streak"`
+	CommunityGoals  *bool     `json:"community_goals"`
+	Bet             betConfig `json:"bet"`
+}
+
 type config struct {
 	Username                   string `json:"username"`
 	Password                   string `json:"password"`
@@ -54,6 +64,63 @@ type config struct {
 	WatchPriority []string  `json:"watch_priority"`
 	Bet           betConfig `json:"bet"`
 	Timezone      *string   `json:"timezone"`
+
+	StreamerOverrides map[string]streamerSettingsConfig `json:"streamer_overrides"`
+}
+
+func mergeBetSettings(base entities.BetSettings, override betConfig) entities.BetSettings {
+	out := base
+	if override.Strategy != "" {
+		out.Strategy = entities.Strategy(override.Strategy)
+	}
+	if override.Percentage != nil {
+		out.Percentage = override.Percentage
+	}
+	if override.PercentageGap != nil {
+		out.PercentageGap = override.PercentageGap
+	}
+	if override.MaxPoints != nil {
+		out.MaxPoints = override.MaxPoints
+	}
+	if override.MinimumPoints != nil {
+		out.MinimumPoints = override.MinimumPoints
+	}
+	if override.StealthMode != nil {
+		out.StealthMode = override.StealthMode
+	}
+	if override.DelayMode != "" {
+		out.DelayMode = entities.DelayMode(override.DelayMode)
+	}
+	if override.Delay != nil {
+		out.Delay = override.Delay
+	}
+	out.Default()
+	return out
+}
+
+func mergeStreamerSettings(base entities.StreamerSettings, override streamerSettingsConfig) entities.StreamerSettings {
+	out := base
+	if override.MakePredictions != nil {
+		out.MakePredictions = *override.MakePredictions
+	}
+	if override.FollowRaid != nil {
+		out.FollowRaid = *override.FollowRaid
+	}
+	if override.ClaimDrops != nil {
+		out.ClaimDrops = *override.ClaimDrops
+	}
+	if override.ClaimMoments != nil {
+		out.ClaimMoments = *override.ClaimMoments
+	}
+	if override.WatchStreak != nil {
+		out.WatchStreak = *override.WatchStreak
+	}
+	if override.CommunityGoals != nil {
+		out.CommunityGoals = *override.CommunityGoals
+	}
+	out.Bet = mergeBetSettings(out.Bet, override.Bet)
+	out.Default()
+	return out
 }
 
 func clearConsole() {
@@ -108,6 +175,7 @@ func defaultConfig() map[string]interface{} {
 			"DROPS",
 			"ORDER",
 		},
+		"streamer_overrides": map[string]interface{}{},
 		"bet": map[string]interface{}{
 			"strategy":       nil,
 			"percentage":     nil,
@@ -229,6 +297,18 @@ func main() {
 	}
 	streamerSettings.Default()
 
+	// ? Apply optional defaults/overrides (per-streamer)
+	baseStreamerSettings := streamerSettings
+
+	overrideSettings := make(map[string]entities.StreamerSettings, len(cfg.StreamerOverrides))
+	for name, override := range cfg.StreamerOverrides {
+		key := strings.ToLower(strings.TrimSpace(name))
+		if key == "" {
+			continue
+		}
+		overrideSettings[key] = mergeStreamerSettings(baseStreamerSettings, override)
+	}
+
 	loggerSettings := miner.LoggerSettings{
 		Save:             cfg.SaveLogs,
 		ConsoleLevel:     0,
@@ -251,7 +331,8 @@ func main() {
 		cfg.ClaimDropsStartup,
 		cfg.DisableSSLCertVerification,
 		loggerSettings,
-		streamerSettings,
+		baseStreamerSettings,
+		overrideSettings,
 		cfg.WatchPriority,
 		cfg.GamePriority,
 		cfg.GameExclude,

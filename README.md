@@ -34,6 +34,46 @@ Go rewrite of [0x8fv/Twitch-Channel-Points-Miner-v2](https://github.com/0x8fv/Tw
 - `claim_drops_startup`, `claim_drops`, `follow_raid`: Auto-claim drops at boot, continue claiming while running, and auto-follow raid targets.
 - `betting(make_predictions)`: Enable Twitch prediction betting.
 - `streamers`: List of channel logins to mine; if empty, followers are mined in descending follow order.
+- `streamer_overrides`: Per-streamer overrides keyed by login; inherit from the global flags above. Example:
+  ```json
+  "streamer1": {
+      "make_predictions": true,
+      "follow_raid": false,
+      "claim_drops": true,
+      "claim_moments": false,
+      "watch_streak": true,
+      "community_goals": false,
+      "bet": {
+        "strategy": "SMART",
+        "percentage": 5,
+        "percentage_gap": 20,
+        "max_points": 234,
+        "minimum_points": 20000,
+        "stealth_mode": true,
+        "delay_mode": "FROM_END",
+        "delay": 6
+      }
+    },
+    "streamer2": {
+      "make_predictions": false,
+      "follow_raid": true,
+      "claim_drops": false,
+      "claim_moments": true,
+      "watch_streak": false,
+      "community_goals": true,
+      "bet": {
+        "strategy": "PERCENTAGE",
+        "percentage": 10,
+        "percentage_gap": 15,
+        "max_points": 5000,
+        "minimum_points": 0,
+        "stealth_mode": false,
+        "delay_mode": "FROM_START",
+        "delay": 3
+      }
+    }
+  }
+  ```
 - `show_game`: When true, log the game a streamer is playing on join and on watch-point gains.
 - `game_priority` / `game_exclude`: Ordered game names to prefer and names to skip entirely. Leave empty to keep the default behavior; matches are case-insensitive.
 - `bet`: Advanced prediction tuning. Defaults are applied when values are `null`:

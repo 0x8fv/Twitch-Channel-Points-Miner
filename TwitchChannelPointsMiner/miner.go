@@ -113,6 +113,7 @@ type Miner struct {
 	DisableSSLCertVerification bool
 	LoggerSettings             LoggerSettings
 	StreamerSettings           entities.StreamerSettings
+	StreamerOverrides          map[string]entities.StreamerSettings
 	logger                     *Logger
 	startedAt                  time.Time
 	twitch                     *classpkg.Twitch
@@ -130,7 +131,7 @@ type Miner struct {
 	// showDropsIndicator         bool
 }
 
-func NewMiner(username, password string, claimDropsStartup bool, disableCertCheck bool, loggerSettings LoggerSettings, streamerSettings entities.StreamerSettings, priorityNames []string, gamePriority []string, gameExclude []string, showGameInfo bool, logWatchQueue bool) *Miner {
+func NewMiner(username, password string, claimDropsStartup bool, disableCertCheck bool, loggerSettings LoggerSettings, streamerSettings entities.StreamerSettings, streamerOverrides map[string]entities.StreamerSettings, priorityNames []string, gamePriority []string, gameExclude []string, showGameInfo bool, logWatchQueue bool) *Miner {
 	streamerSettings.Default()
 	priorityList := normalizeGameList(gamePriority)
 	excludedGames := make(map[string]struct{})
@@ -148,6 +149,7 @@ func NewMiner(username, password string, claimDropsStartup bool, disableCertChec
 		DisableSSLCertVerification: disableCertCheck,
 		LoggerSettings:             loggerSettings,
 		StreamerSettings:           streamerSettings,
+		StreamerOverrides:          streamerOverrides,
 		logger:                     NewLogger(loggerSettings, username),
 		watchPriorities:            parseWatchPriorities(priorityNames),
 		gamePriority:               priorityList,
@@ -209,9 +211,13 @@ func (m *Miner) run(streamers []string, useFollowers bool, order entities.Follow
 		if name == "" {
 			continue
 		}
+		settings := m.StreamerSettings
+		if override, ok := m.StreamerOverrides[strings.ToLower(name)]; ok {
+			settings = override
+		}
 		s := &entities.Streamer{
 			Username:    name,
-			Settings:    m.StreamerSettings,
+			Settings:    settings,
 			Stream:      entities.NewStream(),
 			StreamerURL: fmt.Sprintf("%s/%s", constants.URL, name),
 		}
