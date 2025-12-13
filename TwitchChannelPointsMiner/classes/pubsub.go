@@ -612,6 +612,13 @@ func (p *PubSubClient) placePrediction(eventID string) {
 		p.logger.Printf("Skip bet for %s: no outcome selected", streamer.Username)
 		return
 	}
+	if skip, compared, reason := event.ShouldSkipByFilter(); skip {
+		if reason == "" {
+			reason = fmt.Sprintf("filter_condition not satisfied (current %s)", formatFloat(compared))
+		}
+		p.logger.Printf("Skip bet for %s: %s", streamer.Username, reason)
+		return
+	}
 	if decision.Amount < 10 {
 		reason := fmt.Sprintf("balance %d below Twitch minimum 10", streamer.ChannelPoints)
 		if streamer.ChannelPoints >= 10 {

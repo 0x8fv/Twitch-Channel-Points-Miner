@@ -37,40 +37,45 @@ Go rewrite of [0x8fv/Twitch-Channel-Points-Miner-v2](https://github.com/0x8fv/Tw
 - `streamer_overrides`: Per-streamer overrides keyed by login; inherit from the global flags above. Example:
   ```json
   "streamer1": {
-      "make_predictions": true,
-      "follow_raid": false,
-      "claim_drops": true,
-      "claim_moments": false,
-      "watch_streak": true,
-      "community_goals": false,
-      "bet": {
-        "strategy": "SMART",
-        "percentage": 5,
-        "percentage_gap": 20,
-        "max_points": 234,
-        "minimum_points": 20000,
-        "stealth_mode": true,
-        "delay_mode": "FROM_END",
-        "delay": 6
+    "make_predictions": true,
+    "follow_raid": false,
+    "claim_drops": true,
+    "claim_moments": false,
+    "watch_streak": true,
+    "community_goals": false,
+    "bet": {
+      "strategy": "SMART",
+      "percentage": 5,
+      "percentage_gap": 20,
+      "max_points": 234,
+      "minimum_points": 20000,
+      "stealth_mode": true,
+      "delay_mode": "FROM_END",
+      "delay": 6,
+      "filter_condition": {
+        "by": "TOTAL_USERS",
+        "where": "GTE",
+        "value": 50
       }
-    },
-    "streamer2": {
-      "make_predictions": false,
-      "follow_raid": true,
-      "claim_drops": false,
-      "claim_moments": true,
-      "watch_streak": false,
-      "community_goals": true,
-      "bet": {
-        "strategy": "PERCENTAGE",
-        "percentage": 10,
-        "percentage_gap": 15,
-        "max_points": 5000,
-        "minimum_points": 0,
-        "stealth_mode": false,
-        "delay_mode": "FROM_START",
-        "delay": 3
-      }
+    }
+  },
+  "streamer2": {
+    "make_predictions": false,
+    "follow_raid": true,
+    "claim_drops": false,
+    "claim_moments": true,
+    "watch_streak": false,
+    "community_goals": true,
+    "bet": {
+      "strategy": "PERCENTAGE",
+      "percentage": 10,
+      "percentage_gap": 15,
+      "max_points": 5000,
+      "minimum_points": 0,
+      "stealth_mode": false,
+      "delay_mode": "FROM_START",
+      "delay": 3,
+      "filter_condition": null
     }
   }
   ```
@@ -84,6 +89,7 @@ Go rewrite of [0x8fv/Twitch-Channel-Points-Miner-v2](https://github.com/0x8fv/Tw
   - `minimum_points`: Skip bets below this balance (default 0).
   - `stealth_mode`: If true, bets favor lower-visibility patterns (default false).
   - `delay_mode` / `delay`: When to place the bet (default `FROM_END`, 6 seconds).
+  - `filter_condition`: Optional object to skip betting unless a live metric meets your rule. Example: `{ "by": "TOTAL_USERS", "where": "GTE", "value": 50 }` to skip bets until at least 50 users participate. `by` supports `PERCENTAGE_USERS`, `ODDS`, `ODDS_PERCENTAGE`, `TOP_POINTS`, `TOTAL_USERS`, `TOTAL_POINTS`; `where` supports `GT`, `LT`, `GTE`, `LTE`.
 
 ## How it works
 - Authenticates via Twitch device flow, persists cookies per user, and refreshes the client build id for GQL calls.

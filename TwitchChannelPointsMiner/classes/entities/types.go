@@ -35,16 +35,44 @@ const (
 	DelayModePercentage DelayMode = "PERCENTAGE"
 )
 
+type Condition string
+
+const (
+	ConditionGT  Condition = "GT"
+	ConditionLT  Condition = "LT"
+	ConditionGTE Condition = "GTE"
+	ConditionLTE Condition = "LTE"
+)
+
+type OutcomeKey string
+
+const (
+	OutcomePercentageUsers OutcomeKey = "PERCENTAGE_USERS"
+	OutcomeOdds            OutcomeKey = "ODDS"
+	OutcomeOddsPercentage  OutcomeKey = "ODDS_PERCENTAGE"
+	OutcomeTopPoints       OutcomeKey = "TOP_POINTS"
+	OutcomeTotalUsers      OutcomeKey = "TOTAL_USERS"
+	OutcomeTotalPoints     OutcomeKey = "TOTAL_POINTS"
+	OutcomeDecisionUsers   OutcomeKey = "DECISION_USERS"
+	OutcomeDecisionPoints  OutcomeKey = "DECISION_POINTS"
+)
+
+type FilterCondition struct {
+	By    OutcomeKey `json:"by"`
+	Where Condition  `json:"where"`
+	Value *float64   `json:"value"`
+}
+
 type BetSettings struct {
-	Strategy        Strategy  `json:"strategy,omitempty"`
-	Percentage      *int      `json:"percentage,omitempty"`
-	PercentageGap   *int      `json:"percentage_gap,omitempty"`
-	MaxPoints       *int      `json:"max_points,omitempty"`
-	MinimumPoints   *int      `json:"minimum_points,omitempty"`
-	StealthMode     *bool     `json:"stealth_mode,omitempty"`
-	FilterCondition *string   `json:"filter_condition,omitempty"`
-	Delay           *float64  `json:"delay,omitempty"`
-	DelayMode       DelayMode `json:"delay_mode,omitempty"`
+	Strategy        Strategy         `json:"strategy,omitempty"`
+	Percentage      *int             `json:"percentage,omitempty"`
+	PercentageGap   *int             `json:"percentage_gap,omitempty"`
+	MaxPoints       *int             `json:"max_points,omitempty"`
+	MinimumPoints   *int             `json:"minimum_points,omitempty"`
+	StealthMode     *bool            `json:"stealth_mode,omitempty"`
+	FilterCondition *FilterCondition `json:"filter_condition,omitempty"`
+	Delay           *float64         `json:"delay,omitempty"`
+	DelayMode       DelayMode        `json:"delay_mode,omitempty"`
 }
 
 type StreamerSettings struct {

@@ -17,15 +17,22 @@ import (
 	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/utils"
 )
 
+type filterConditionConfig struct {
+	By    string   `json:"by"`
+	Where string   `json:"where"`
+	Value *float64 `json:"value"`
+}
+
 type betConfig struct {
-	Strategy      string   `json:"strategy"`
-	Percentage    *int     `json:"percentage"`
-	PercentageGap *int     `json:"percentage_gap"`
-	MaxPoints     *int     `json:"max_points"`
-	StealthMode   *bool    `json:"stealth_mode"`
-	DelayMode     string   `json:"delay_mode"`
-	Delay         *float64 `json:"delay"`
-	MinimumPoints *int     `json:"minimum_points"`
+	Strategy        string                 `json:"strategy"`
+	Percentage      *int                   `json:"percentage"`
+	PercentageGap   *int                   `json:"percentage_gap"`
+	MaxPoints       *int                   `json:"max_points"`
+	StealthMode     *bool                  `json:"stealth_mode"`
+	DelayMode       string                 `json:"delay_mode"`
+	Delay           *float64               `json:"delay"`
+	MinimumPoints   *int                   `json:"minimum_points"`
+	FilterCondition *filterConditionConfig `json:"filter_condition"`
 }
 
 type streamerSettingsConfig struct {
@@ -88,6 +95,9 @@ func mergeBetSettings(base entities.BetSettings, override betConfig) entities.Be
 	if override.StealthMode != nil {
 		out.StealthMode = override.StealthMode
 	}
+	if override.FilterCondition != nil {
+		out.FilterCondition = mergeFilterCondition(out.FilterCondition, override.FilterCondition)
+	}
 	if override.DelayMode != "" {
 		out.DelayMode = entities.DelayMode(override.DelayMode)
 	}
@@ -121,6 +131,30 @@ func mergeStreamerSettings(base entities.StreamerSettings, override streamerSett
 	out.Bet = mergeBetSettings(out.Bet, override.Bet)
 	out.Default()
 	return out
+}
+
+func mergeFilterCondition(base *entities.FilterCondition, override *filterConditionConfig) *entities.FilterCondition {
+	if override == nil {
+		return base
+	}
+	var out entities.FilterCondition
+	if base != nil {
+		out = *base
+	}
+	if override.By != "" {
+		out.By = entities.OutcomeKey(strings.ToUpper(strings.TrimSpace(override.By)))
+	}
+	if override.Where != "" {
+		out.Where = entities.Condition(strings.ToUpper(strings.TrimSpace(override.Where)))
+	}
+	if override.Value != nil {
+		out.Value = override.Value
+	}
+	// ? If nothing was set, keep nil to avoid activating an empty filter
+	if out.By == "" && out.Where == "" && out.Value == nil {
+		return base
+	}
+	return &out
 }
 
 func clearConsole() {
@@ -185,6 +219,11 @@ func defaultConfig() map[string]interface{} {
 			"delay_mode":     nil,
 			"delay":          nil,
 			"minimum_points": nil,
+			"filter_condition": map[string]interface{}{
+				"by":    nil,
+				"where": nil,
+				"value": nil,
+			},
 		},
 	}
 }
@@ -212,11 +251,24 @@ func loadOrCreateConfig(path string) (config, error) {
 		cfgMap["bet"] = betRaw
 		changed = true
 	} else {
-		for k, v := range defaultConfig()["bet"].(map[string]interface{}) {
+		defaultBet := defaultConfig()["bet"].(map[string]interface{})
+		for k, v := range defaultBet {
 			if _, ok := betRaw[k]; !ok {
 				betRaw[k] = v
 				changed = true
 			}
+		}
+		// ? Ensure nested filter_condition keys are present.
+		if fcRaw, ok := betRaw["filter_condition"].(map[string]interface{}); ok {
+			for k, v := range defaultBet["filter_condition"].(map[string]interface{}) {
+				if _, ok := fcRaw[k]; !ok {
+					fcRaw[k] = v
+					changed = true
+				}
+			}
+		} else {
+			betRaw["filter_condition"] = defaultBet["filter_condition"]
+			changed = true
 		}
 	}
 

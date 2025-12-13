@@ -166,6 +166,98 @@ func (p *PredictionEvent) Decide(balance int) PredictionDecision {
 	return decision
 }
 
+// ? ShouldSkipByFilter evaluates the optional filter_condition before betting
+// ? Returns true when the bet should be skipped, along with the compared value and a "human-friendly" reason
+func (p *PredictionEvent) ShouldSkipByFilter() (bool, float64, string) {
+	if p == nil || p.Streamer == nil {
+		return false, 0, ""
+	}
+	fc := p.Streamer.Settings.Bet.FilterCondition
+	if fc == nil || fc.Value == nil || fc.By == "" || fc.Where == "" {
+		return false, 0, ""
+	}
+
+	by := entities.OutcomeKey(strings.ToUpper(string(fc.By)))
+	where := entities.Condition(strings.ToUpper(string(fc.Where)))
+	value := *fc.Value
+
+	valueByChoice := func(selector func(PredictionOutcome) float64) (float64, bool) {
+		if p.Decision.Choice >= 0 && p.Decision.Choice < len(p.Outcomes) {
+			return selector(p.Outcomes[p.Decision.Choice]), true
+		}
+		return 0, false
+	}
+
+	var compared float64
+	switch by {
+	case entities.OutcomeTotalUsers:
+		for _, out := range p.Outcomes {
+			compared += float64(out.TotalUsers)
+		}
+	case entities.OutcomeTotalPoints:
+		for _, out := range p.Outcomes {
+			compared += float64(out.TotalPoints)
+		}
+	case entities.OutcomeDecisionUsers:
+		if v, ok := valueByChoice(func(o PredictionOutcome) float64 { return float64(o.TotalUsers) }); ok {
+			compared = v
+		} else {
+			return true, 0, "filter_condition requires a decision outcome"
+		}
+	case entities.OutcomeDecisionPoints:
+		if v, ok := valueByChoice(func(o PredictionOutcome) float64 { return float64(o.TotalPoints) }); ok {
+			compared = v
+		} else {
+			return true, 0, "filter_condition requires a decision outcome"
+		}
+	case entities.OutcomePercentageUsers:
+		if v, ok := valueByChoice(func(o PredictionOutcome) float64 { return o.PercentageUsers }); ok {
+			compared = v
+		} else {
+			return true, 0, "filter_condition requires a decision outcome"
+		}
+	case entities.OutcomeOdds:
+		if v, ok := valueByChoice(func(o PredictionOutcome) float64 { return o.Odds }); ok {
+			compared = v
+		} else {
+			return true, 0, "filter_condition requires a decision outcome"
+		}
+	case entities.OutcomeOddsPercentage:
+		if v, ok := valueByChoice(func(o PredictionOutcome) float64 { return o.OddsPercentage }); ok {
+			compared = v
+		} else {
+			return true, 0, "filter_condition requires a decision outcome"
+		}
+	case entities.OutcomeTopPoints:
+		if v, ok := valueByChoice(func(o PredictionOutcome) float64 { return float64(o.TopPoints) }); ok {
+			compared = v
+		} else {
+			return true, 0, "filter_condition requires a decision outcome"
+		}
+	default:
+		return true, 0, fmt.Sprintf("filter_condition 'by' unsupported: %s", by)
+	}
+
+	var pass bool
+	switch where {
+	case entities.ConditionGT:
+		pass = compared > value
+	case entities.ConditionGTE:
+		pass = compared >= value
+	case entities.ConditionLT:
+		pass = compared < value
+	case entities.ConditionLTE:
+		pass = compared <= value
+	default:
+		return true, compared, fmt.Sprintf("filter_condition 'where' unsupported: %s", where)
+	}
+
+	if pass {
+		return false, compared, ""
+	}
+	return true, compared, fmt.Sprintf("filter_condition %s %s %s not met (current %s)", by, where, formatFloat(value), formatFloat(compared))
+}
+
 func (p *PredictionEvent) ParseResult(result map[string]interface{}) (gained, placed, won int, resultType, resultString string) {
 	resultType = strings.ToUpper(stringOrDefault(result["type"]))
 	placed = p.Decision.Amount
