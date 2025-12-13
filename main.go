@@ -328,6 +328,46 @@ func applyTimezoneOverride(raw *string, logger *miner.Logger) {
 	time.Local = loc
 }
 
+func buildBaseStreamerSettings(cfg config) entities.StreamerSettings {
+	betSettings := entities.BetSettings{
+		Strategy:        entities.Strategy(cfg.Bet.Strategy),
+		Percentage:      cfg.Bet.Percentage,
+		PercentageGap:   cfg.Bet.PercentageGap,
+		MaxPoints:       cfg.Bet.MaxPoints,
+		StealthMode:     cfg.Bet.StealthMode,
+		DelayMode:       entities.DelayMode(cfg.Bet.DelayMode),
+		Delay:           cfg.Bet.Delay,
+		MinimumPoints:   cfg.Bet.MinimumPoints,
+		FilterCondition: mergeFilterCondition(nil, cfg.Bet.FilterCondition),
+	}
+	betSettings.Default()
+
+	streamerSettings := entities.StreamerSettings{
+		MakePredictions: cfg.BettingMakePredictions,
+		FollowRaid:      cfg.FollowRaid,
+		ClaimDrops:      cfg.ClaimDrops,
+		ClaimMoments:    true,
+		WatchStreak:     true,
+		CommunityGoals:  cfg.CommunityGoals,
+		Bet:             betSettings,
+		IRCMode:         parseChatPresence(cfg.IRCMode, entities.IRCModeOnline),
+	}
+	streamerSettings.Default()
+	return streamerSettings
+}
+
+func buildOverrideSettings(base entities.StreamerSettings, overrides map[string]streamerSettingsConfig) map[string]entities.StreamerSettings {
+	overrideSettings := make(map[string]entities.StreamerSettings, len(overrides))
+	for name, override := range overrides {
+		key := strings.ToLower(strings.TrimSpace(name))
+		if key == "" {
+			continue
+		}
+		overrideSettings[key] = mergeStreamerSettings(base, override)
+	}
+	return overrideSettings
+}
+
 func main() {
 	setConsoleTitle("Klaro's Twitch Miner")
 	clearConsole()
@@ -347,41 +387,9 @@ func main() {
 		}
 	}
 
-	betSettings := entities.BetSettings{
-		Strategy:      entities.Strategy(cfg.Bet.Strategy),
-		Percentage:    cfg.Bet.Percentage,
-		PercentageGap: cfg.Bet.PercentageGap,
-		MaxPoints:     cfg.Bet.MaxPoints,
-		StealthMode:   cfg.Bet.StealthMode,
-		DelayMode:     entities.DelayMode(cfg.Bet.DelayMode),
-		Delay:         cfg.Bet.Delay,
-		MinimumPoints: cfg.Bet.MinimumPoints,
-	}
-	betSettings.Default()
-
-	streamerSettings := entities.StreamerSettings{
-		MakePredictions: cfg.BettingMakePredictions,
-		FollowRaid:      cfg.FollowRaid,
-		ClaimDrops:      cfg.ClaimDrops,
-		ClaimMoments:    true,
-		WatchStreak:     true,
-		CommunityGoals:  cfg.CommunityGoals,
-		Bet:             betSettings,
-		IRCMode:         parseChatPresence(cfg.IRCMode, entities.IRCModeOnline),
-	}
-	streamerSettings.Default()
-
 	// ? Apply optional defaults/overrides (per-streamer)
-	baseStreamerSettings := streamerSettings
-
-	overrideSettings := make(map[string]entities.StreamerSettings, len(cfg.StreamerOverrides))
-	for name, override := range cfg.StreamerOverrides {
-		key := strings.ToLower(strings.TrimSpace(name))
-		if key == "" {
-			continue
-		}
-		overrideSettings[key] = mergeStreamerSettings(baseStreamerSettings, override)
-	}
+	baseStreamerSettings := buildBaseStreamerSettings(cfg)
+	overrideSettings := buildOverrideSettings(baseStreamerSettings, cfg.StreamerOverrides)
 
 	loggerSettings := miner.LoggerSettings{
 		Save:             cfg.SaveLogs,
