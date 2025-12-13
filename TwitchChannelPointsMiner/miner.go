@@ -930,7 +930,6 @@ func (m *Miner) updatePresence(streamer *entities.Streamer) {
 
 func (m *Miner) logOnline(streamer *entities.Streamer) {
 	name := styledStreamerName(streamer)
-	m.logger.EmojiPrintf(":speech_balloon:", "Join IRC Chat: %s", name)
 	points := formatChannelPoints(streamer.ChannelPoints)
 	gameSuffix := ""
 	if suffix := m.gameSuffix(streamer); suffix != "" {
@@ -1182,11 +1181,11 @@ func (m *Miner) updateChatPresence(streamer *entities.Streamer, online bool) {
 	if streamer == nil {
 		return
 	}
-	if online {
+	if shouldJoinChat(streamer.Settings.IRCMode, online) {
 		m.startChatWatcher(streamer)
-	} else {
-		m.stopChatWatcher(streamer)
+		return
 	}
+	m.stopChatWatcher(streamer)
 }
 
 func (m *Miner) startChatWatcher(streamer *entities.Streamer) {
@@ -1206,6 +1205,9 @@ func (m *Miner) startChatWatcher(streamer *entities.Streamer) {
 	watcher := classpkg.NewChatClient(m.Username, token, streamer.Username, m.logger, false)
 	m.chatWatchers[key] = watcher
 	m.chatMu.Unlock()
+	if m.logger != nil {
+		m.logger.EmojiPrintf(":speech_balloon:", "Join IRC Chat: %s", styledStreamerName(streamer))
+	}
 	watcher.Start()
 }
 
@@ -1240,6 +1242,21 @@ func (m *Miner) stopAllChatWatchers() {
 	m.chatMu.Unlock()
 	for _, watcher := range watchers {
 		watcher.Stop()
+	}
+}
+
+func shouldJoinChat(mode entities.IRCMode, online bool) bool {
+	switch mode {
+	case entities.IRCModeAlways:
+		return true
+	case entities.IRCModeNever:
+		return false
+	case entities.IRCModeOffline:
+		return !online
+	case entities.IRCModeOnline:
+		return online
+	default:
+		return online
 	}
 }
 

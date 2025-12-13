@@ -19,6 +19,9 @@ func TestStreamerSettingsDefault(t *testing.T) {
 	if s.Bet.Strategy == "" || s.Bet.Delay == nil {
 		t.Fatalf("bet defaults not propagated: %#v", s)
 	}
+	if s.IRCMode == "" || s.IRCMode != IRCModeOnline {
+		t.Fatalf("irc mode default not applied: %s", s.IRCMode)
+	}
 }
 
 func TestStreamerMultipliers(t *testing.T) {

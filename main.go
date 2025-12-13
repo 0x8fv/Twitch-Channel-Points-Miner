@@ -43,6 +43,7 @@ type streamerSettingsConfig struct {
 	WatchStreak     *bool     `json:"watch_streak"`
 	CommunityGoals  *bool     `json:"community_goals"`
 	Bet             betConfig `json:"bet"`
+	IRCMode         *string   `json:"chat_presence"`
 }
 
 type config struct {
@@ -64,6 +65,7 @@ type config struct {
 	ShowUsernameInConsole      bool   `json:"show_username_in_console"`
 	ShowClaimedBonusMsg        bool   `json:"show_claimed_bonus_msg"`
 	ShowGame                   bool   `json:"show_game"`
+	IRCMode                    string `json:"chat_presence"`
 	// ShowDropsIndicator         bool      `json:"show_drops_indicator"`
 	Streamers     []string  `json:"streamers"`
 	GamePriority  []string  `json:"game_priority"`
@@ -129,8 +131,26 @@ func mergeStreamerSettings(base entities.StreamerSettings, override streamerSett
 		out.CommunityGoals = *override.CommunityGoals
 	}
 	out.Bet = mergeBetSettings(out.Bet, override.Bet)
+	if override.IRCMode != nil {
+		out.IRCMode = parseChatPresence(*override.IRCMode, out.IRCMode)
+	}
 	out.Default()
 	return out
+}
+
+func parseChatPresence(mode string, fallback entities.IRCMode) entities.IRCMode {
+	switch strings.ToUpper(strings.TrimSpace(mode)) {
+	case string(entities.IRCModeAlways):
+		return entities.IRCModeAlways
+	case string(entities.IRCModeNever):
+		return entities.IRCModeNever
+	case string(entities.IRCModeOffline):
+		return entities.IRCModeOffline
+	case string(entities.IRCModeOnline):
+		return entities.IRCModeOnline
+	default:
+		return fallback
+	}
 }
 
 func mergeFilterCondition(base *entities.FilterCondition, override *filterConditionConfig) *entities.FilterCondition {
@@ -199,6 +219,7 @@ func defaultConfig() map[string]interface{} {
 		"show_username_in_console":      false,
 		"show_claimed_bonus_msg":        true,
 		"show_game":                     true,
+		"chat_presence":                 "ONLINE",
 		"timezone":                      nil,
 		// "show_drops_indicator":          true,
 		"streamers":     []interface{}{},
@@ -346,6 +367,7 @@ func main() {
 		WatchStreak:     true,
 		CommunityGoals:  cfg.CommunityGoals,
 		Bet:             betSettings,
+		IRCMode:         parseChatPresence(cfg.IRCMode, entities.IRCModeOnline),
 	}
 	streamerSettings.Default()
 

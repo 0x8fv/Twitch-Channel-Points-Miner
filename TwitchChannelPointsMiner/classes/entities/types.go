@@ -35,6 +35,15 @@ const (
 	DelayModePercentage DelayMode = "PERCENTAGE"
 )
 
+type IRCMode string
+
+const (
+	IRCModeAlways  IRCMode = "ALWAYS"
+	IRCModeNever   IRCMode = "NEVER"
+	IRCModeOnline  IRCMode = "ONLINE"
+	IRCModeOffline IRCMode = "OFFLINE"
+)
+
 type Condition string
 
 const (
@@ -83,6 +92,7 @@ type StreamerSettings struct {
 	WatchStreak     bool        `json:"watch_streak"`
 	CommunityGoals  bool        `json:"community_goals"`
 	Bet             BetSettings `json:"bet"`
+	IRCMode         IRCMode     `json:"chat_presence"`
 }
 
 type Streamer struct {
@@ -186,4 +196,7 @@ func (b *BetSettings) Default() {
 
 func (s *StreamerSettings) Default() {
 	s.Bet.Default()
+	if s.IRCMode == "" {
+		s.IRCMode = IRCModeOnline
+	}
 }
