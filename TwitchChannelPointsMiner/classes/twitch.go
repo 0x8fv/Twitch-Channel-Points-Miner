@@ -32,6 +32,11 @@ type debugLogger interface {
 	EmojiPrintf(emoji, format string, args ...interface{})
 }
 
+type deepDebugLogger interface {
+	DeepDebugf(format string, args ...interface{})
+	DeepDebugEnabled() bool
+}
+
 type Twitch struct {
 	userAgent      string
 	deviceID       string
@@ -102,6 +107,23 @@ func (t *Twitch) debugf(format string, args ...interface{}) {
 	}
 }
 
+func (t *Twitch) deepDebugf(format string, args ...interface{}) {
+	if t == nil {
+		return
+	}
+	if t.anonymizer != nil && t.anonymizer.Enabled() {
+		return
+	}
+	if t.logger == nil {
+		return
+	}
+	deep, ok := t.logger.(deepDebugLogger)
+	if !ok || !deep.DeepDebugEnabled() {
+		return
+	}
+	deep.DeepDebugf(format, args...)
+}
+
 // ? UpdateClientVersion refreshes the Twitch build id used for GQL calls.
 func (t *Twitch) UpdateClientVersion() string {
 	resp, err := t.client.Get(constants.URL)
@@ -155,11 +177,15 @@ func (t *Twitch) postGQLWithHeaders(payload interface{}, extraHeaders map[string
 	if err != nil {
 		return nil, err
 	}
-	if t.anonymizer != nil && t.anonymizer.Enabled() {
-		t.debugf("GQL %s | Status %d", operationName(payload), resp.StatusCode)
-	} else {
-		t.debugf("GQL %s | Status %d | Headers: %v | Request: %s | Response: %s", operationName(payload), resp.StatusCode, req.Header, strings.TrimSpace(string(body)), strings.TrimSpace(string(respBody)))
-	}
+	t.debugf("GQL %s | Status %d", operationName(payload), resp.StatusCode)
+	t.deepDebugf(
+		"GQL %s | Status %d | Headers: %v | Request: %s | Response: %s",
+		operationName(payload),
+		resp.StatusCode,
+		req.Header,
+		strings.TrimSpace(string(body)),
+		strings.TrimSpace(string(respBody)),
+	)
 	var result map[string]interface{}
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, err
@@ -596,7 +622,8 @@ func (t *Twitch) claimBonusTV(streamer *entities.Streamer, claimID string) error
 		if t.anonymizer != nil && t.anonymizer.Enabled() {
 			t.logger.Debugf("ClaimCommunityPoints status=%d", resp.StatusCode)
 		} else {
-			t.logger.Debugf("ClaimCommunityPoints status=%d headers=%v req=%s resp=%s", resp.StatusCode, req.Header, strings.TrimSpace(string(reqBody)), strings.TrimSpace(string(respBody)))
+			t.logger.Debugf("ClaimCommunityPoints status=%d", resp.StatusCode)
+			t.deepDebugf("ClaimCommunityPoints status=%d headers=%v req=%s resp=%s", resp.StatusCode, req.Header, strings.TrimSpace(string(reqBody)), strings.TrimSpace(string(respBody)))
 		}
 	}
 

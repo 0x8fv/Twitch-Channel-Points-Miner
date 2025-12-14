@@ -62,6 +62,20 @@ func (p *PubSubClient) debugf(format string, args ...interface{}) {
 	}
 }
 
+func (p *PubSubClient) deepDebugf(format string, args ...interface{}) {
+	if p == nil || p.anonymizeLogs() {
+		return
+	}
+	if p.logger == nil {
+		return
+	}
+	deep, ok := p.logger.(deepDebugLogger)
+	if !ok || !deep.DeepDebugEnabled() {
+		return
+	}
+	deep.DeepDebugf(format, args...)
+}
+
 func NewPubSubClient(
 	twitch *Twitch,
 	logger Logger,
@@ -186,15 +200,12 @@ func (p *PubSubClient) connectAndListen(connIndex int, topics []string, stop <-c
 					msgType = strings.ToUpper(strings.TrimSpace(t))
 				}
 			}
-			if p.anonymizeLogs() {
-				if msgType != "" {
-					p.debugf("PubSub[%d] recv type=%s (%d bytes)", connIndex, msgType, len(message))
-				} else {
-					p.debugf("PubSub[%d] recv (%d bytes)", connIndex, len(message))
-				}
+			if msgType != "" {
+				p.debugf("PubSub[%d] recv type=%s (%d bytes)", connIndex, msgType, len(message))
 			} else {
-				p.debugf("PubSub[%d] recv: %s", connIndex, strings.TrimSpace(string(message)))
+				p.debugf("PubSub[%d] recv (%d bytes)", connIndex, len(message))
 			}
+			p.deepDebugf("PubSub[%d] recv: %s", connIndex, strings.TrimSpace(string(message)))
 			if msgType == "PONG" {
 				lastPong = time.Now()
 				continue
@@ -346,15 +357,12 @@ func (p *PubSubClient) handleTopicMessage(envelope map[string]interface{}) error
 		return err
 	}
 	msgType := strings.ToLower(fmt.Sprint(payload["type"]))
-	if p.anonymizeLogs() {
-		prefix := topic
-		if parts := strings.SplitN(topic, ".", 2); len(parts) > 0 {
-			prefix = parts[0]
-		}
-		p.debugf("PubSub topic %s type=%s", prefix, msgType)
-	} else {
-		p.debugf("PubSub topic %s payload %s", topic, strings.TrimSpace(messageStr))
+	prefix := topic
+	if parts := strings.SplitN(topic, ".", 2); len(parts) > 0 {
+		prefix = parts[0]
 	}
+	p.debugf("PubSub topic %s type=%s", prefix, msgType)
+	p.deepDebugf("PubSub topic %s payload %s", topic, strings.TrimSpace(messageStr))
 	channelID := channelIDFromPayload(payload, topic)
 
 	switch {
@@ -537,7 +545,8 @@ func (p *PubSubClient) processClaimAvailable(payload map[string]interface{}, cha
 		if p.anonymizeLogs() {
 			p.logger.Errorf("claim-available ignored: [redacted]")
 		} else {
-			p.logger.Errorf("claim-available ignored: channel=%s claim=%s streamer=%v payload=%v", channelID, claimID, streamer != nil, payload)
+			p.logger.Errorf("claim-available ignored: channel=%s claim=%s streamer=%v", channelID, claimID, streamer != nil)
+			p.deepDebugf("claim-available payload: %v", payload)
 		}
 		return nil
 	}

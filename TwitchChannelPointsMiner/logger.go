@@ -22,6 +22,7 @@ type LoggerSettings struct {
 	ShowClaimedBonus bool `json:"show_claimed_bonus_msg"`
 	Less             bool `json:"less"`
 	Debug            bool `json:"debug"`
+	DebugDeep        bool `json:"debug_deep"`
 	AnonymizeLogs    bool `json:"anonymize_logs"`
 }
 
@@ -97,6 +98,9 @@ func (l *Logger) log(level, emoji, format string, args ...interface{}) {
 	if level == "DEBUG" && !l.settings.Debug {
 		return
 	}
+	if level == "DEEP" && (!l.settings.Debug || !l.settings.DebugDeep) {
+		return
+	}
 	message := fmt.Sprintf(format, args...)
 	if emoji != "" && l.settings.Emoji {
 		message = fmt.Sprintf("%s %s", emojize(emoji), message)
@@ -136,6 +140,14 @@ func (l *Logger) Debugf(format string, args ...interface{}) {
 
 func (l *Logger) DebugEnabled() bool {
 	return l.settings.Debug
+}
+
+func (l *Logger) DeepDebugf(format string, args ...interface{}) {
+	l.log("DEEP", "", format, args...)
+}
+
+func (l *Logger) DeepDebugEnabled() bool {
+	return l.settings.Debug && l.settings.DebugDeep
 }
 
 var emojiMap = map[string]string{

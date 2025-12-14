@@ -55,6 +55,7 @@ type config struct {
 	Password                   string `json:"password"`
 	AutoUpdate                 bool   `json:"auto_update"`
 	Debug                      bool   `json:"debug"`
+	DebugDeep                  bool   `json:"debug_deep"`
 	WatchQueueLogging          bool   `json:"watch_queue_logging"`
 	SmartLogging               bool   `json:"smart_logging"`
 	DisableSSLCertVerification bool   `json:"disable_ssl_cert_verification"`
@@ -210,6 +211,7 @@ func defaultConfig() map[string]interface{} {
 		"password":                      "your-twitch-password (Optional)",
 		"auto_update":                   true,
 		"debug":                         false,
+		"debug_deep":                    false,
 		"watch_queue_logging":           false,
 		"smart_logging":                 true,
 		"disable_ssl_cert_verification": false,
@@ -425,6 +427,7 @@ func main() {
 		ShowClaimedBonus: cfg.ShowClaimedBonusMsg,
 		Less:             false,
 		Debug:            cfg.Debug,
+		DebugDeep:        cfg.DebugDeep,
 		AnonymizeLogs:    cfg.Privacy.AnonymizeLogs,
 	}
 

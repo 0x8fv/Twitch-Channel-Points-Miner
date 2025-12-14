@@ -27,6 +27,8 @@ Go rewrite of [0x8fv/Twitch-Channel-Points-Miner-v2](https://github.com/0x8fv/Tw
 ## Configuration (config.json)
 - `username`: Twitch login used for mining and for the cookie filename.
 - `password`: Optional; device login is used, so you can leave this as-is.
+- `debug`: Enable debug logs (high-level request summaries, PubSub message metadata).
+- `debug_deep`: Enable deep debug logs (full request/response bodies and PubSub payloads); only emitted when `privacy.anonymize_logs` is `false`.
 - `smart_logging`, `emojis`, `show_seconds`, `show_username_in_console`, `show_claimed_bonus_msg`: Console output preferences.
 - `save_logs`: Write console output to `log/<username>.log` in addition to stdout.
 - `privacy.anonymize_logs`: Replace streamer names and point balances in all logs with anonymized values; when enabled, `save_logs` writes to `log/miner.log`.
