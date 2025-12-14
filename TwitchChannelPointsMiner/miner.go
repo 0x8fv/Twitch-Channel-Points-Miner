@@ -15,6 +15,7 @@ import (
 	classpkg "TwitchChannelPointsMiner/TwitchChannelPointsMiner/classes"
 	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/classes/entities"
 	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/constants"
+	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/privacy"
 	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/utils"
 )
 
@@ -128,6 +129,7 @@ type Miner struct {
 	chatMu                     sync.Mutex
 	showGameInfo               bool
 	logWatchQueue              bool
+	anonymizer                 *privacy.Anonymizer
 	// showDropsIndicator         bool
 }
 
@@ -158,6 +160,7 @@ func NewMiner(username, password string, claimDropsStartup bool, disableCertChec
 		chatWatchers:               make(map[string]*classpkg.ChatClient),
 		showGameInfo:               showGameInfo,
 		logWatchQueue:              logWatchQueue,
+		anonymizer:                 privacy.New(loggerSettings.AnonymizeLogs),
 		// showDropsIndicator:         showDropsIndicator,
 	}
 }
@@ -181,7 +184,7 @@ func (m *Miner) run(streamers []string, useFollowers bool, order entities.Follow
 	m.stop = make(chan struct{})
 	m.initialPoints = make(map[string]int)
 
-	tw, err := classpkg.NewTwitch(m.Username, utils.GetUserAgent("CHROME"), m.Password, m.logger)
+	tw, err := classpkg.NewTwitch(m.Username, utils.GetUserAgent("CHROME"), m.Password, m.logger, m.anonymizer)
 	if err != nil {
 		m.logger.Fatalf("failed to create twitch client: %v", err)
 	}
@@ -223,13 +226,13 @@ func (m *Miner) run(streamers []string, useFollowers bool, order entities.Follow
 		}
 		id, err := m.twitch.GetChannelID(name)
 		if err != nil {
-			m.logger.Printf("skip %s: %v", name, err)
+			m.logger.Printf("skip %s: %v", m.rawStreamerName(name), err)
 			continue
 		}
 		s.ChannelID = id
 		prev := s.ChannelPoints
 		if _, err := m.twitch.LoadChannelPointsContext(s); err != nil {
-			m.logger.Printf("context for %s: %v", name, err)
+			m.logger.Printf("context for %s: %v", m.rawStreamerName(name), err)
 		} else {
 			m.handlePointsUpdate(s, prev, "")
 		}
@@ -306,7 +309,7 @@ func (m *Miner) contextRefresher(streamers []*entities.Streamer, stop <-chan str
 			for _, s := range streamers {
 				prev := s.ChannelPoints
 				if _, err := m.twitch.LoadChannelPointsContext(s); err != nil {
-					m.logger.Printf("refresh %s: %v", styledStreamerName(s), err)
+					m.logger.Printf("refresh %s: %v", m.styledStreamerName(s), err)
 				} else {
 					m.handlePointsUpdate(s, prev, "")
 					// TODO: Fix Available Campaigns
@@ -345,7 +348,7 @@ func (m *Miner) minuteWatcher(streamers []*entities.Streamer, stop <-chan struct
 
 			if streamer.Stream != nil && streamer.Stream.LastUpdateAgo() > 10*time.Minute {
 				if _, err := m.twitch.CheckStreamerOnline(streamer); err != nil {
-					m.logger.Printf("online check %s: %v", styledStreamerName(streamer), err)
+					m.logger.Printf("online check %s: %v", m.styledStreamerName(streamer), err)
 				}
 				if !streamer.IsOnline {
 					continue
@@ -356,15 +359,15 @@ func (m *Miner) minuteWatcher(streamers []*entities.Streamer, stop <-chan struct
 				if errors.Is(err, classpkg.ErrStreamerOffline) {
 					live, liveErr := m.twitch.IsStreamLive(streamer.ChannelID)
 					if liveErr != nil {
-						m.logger.Printf("live check %s: %v", styledStreamerName(streamer), liveErr)
+						m.logger.Printf("live check %s: %v", m.styledStreamerName(streamer), liveErr)
 					}
 					if !live {
 						m.setPresence(streamer, false, "minute-watch")
 					} else {
-						m.logger.Printf("minute watch %s: transient offline response, keeping online", styledStreamerName(streamer))
+						m.logger.Printf("minute watch %s: transient offline response, keeping online", m.styledStreamerName(streamer))
 					}
 				}
-				m.logger.Errorf("minute watch %s: %v", styledStreamerName(streamer), err)
+				m.logger.Errorf("minute watch %s: %v", m.styledStreamerName(streamer), err)
 			}
 
 			if m.sleepWithStop(interval, stop) {
@@ -387,7 +390,7 @@ func (m *Miner) refreshStreamForPreference(streamer *entities.Streamer) {
 		if errors.Is(err, classpkg.ErrStreamerOffline) {
 			m.setPresence(streamer, false, "stream-info")
 		} else {
-			m.logger.Debugf("stream info %s: %v", styledStreamerName(streamer), err)
+			m.logger.Debugf("stream info %s: %v", m.styledStreamerName(streamer), err)
 		}
 	}
 }
@@ -406,7 +409,7 @@ func (m *Miner) resolveGameName(streamer *entities.Streamer) string {
 	}
 	if err := m.twitch.UpdateStream(streamer); err != nil {
 		if m.logger != nil && m.logger.DebugEnabled() {
-			m.logger.Debugf("update stream %s for game: %v", styledStreamerName(streamer), err)
+			m.logger.Debugf("update stream %s for game: %v", m.styledStreamerName(streamer), err)
 		}
 		return ""
 	}
@@ -775,7 +778,7 @@ func (m *Miner) pickStreamersToWatch(streamers []*entities.Streamer) []*entities
 			}
 			detail := fmt.Sprintf(
 				"%s (reason=%s, streak=%t, priorityGame=%t, rank=%d, pos=%d%s)",
-				styledStreamerName(s),
+				m.styledStreamerName(s),
 				reason,
 				cand.isStreakReady,
 				cand.priorityGame,
@@ -863,6 +866,7 @@ func (m *Miner) startPubSub(streamers []*entities.Streamer, stop <-chan struct{}
 	client := classpkg.NewPubSubClient(
 		m.twitch,
 		m.logger,
+		m.anonymizer,
 		streamers,
 		m.handlePubSubGain,
 		m.handlePubSubPresence,
@@ -886,14 +890,18 @@ func (m *Miner) shutdown(sessionID string) {
 	for _, s := range m.streamers {
 		totalPointsChange += s.ChannelPoints - m.initialPoints[s.Username]
 	}
-	totalSign := "+"
-	totalColor := colorGreen
-	if totalPointsChange < 0 {
-		totalPointsChange = -totalPointsChange
-		totalSign = "-"
-		totalColor = colorRed
+	if m.anonymizeLogs() {
+		m.logger.EmojiPrintf(":chart_with_upwards_trend:", "Total Points gained: [hidden]")
+	} else {
+		totalSign := "+"
+		totalColor := colorGreen
+		if totalPointsChange < 0 {
+			totalPointsChange = -totalPointsChange
+			totalSign = "-"
+			totalColor = colorRed
+		}
+		m.logger.EmojiPrintf(":chart_with_upwards_trend:", "Total Points gained: %s%s%d%s", totalColor, totalSign, totalPointsChange, colorReset)
 	}
-	m.logger.EmojiPrintf(":chart_with_upwards_trend:", "Total Points gained: %s%s%d%s", totalColor, totalSign, totalPointsChange, colorReset)
 	for _, s := range m.streamers {
 		initial := m.initialPoints[s.Username]
 		total := s.ChannelPoints - initial
@@ -907,11 +915,20 @@ func (m *Miner) shutdown(sessionID string) {
 			sign = "-"
 			total = -total
 		}
-		points := formatChannelPoints(s.ChannelPoints)
-		m.logger.EmojiPrintf(":moneybag:", "%s (%s%s%s points), Total Points %s%s%d%s", styledStreamerName(s), colorCyan, points, colorReset, signColor, sign, total, colorReset)
-		if s.History != nil {
-			for reason, entry := range s.History {
-				m.logger.Printf("                         %s (%d times, %d gained)", reason, entry.Count, entry.Amount)
+		points := m.formattedStreamerPoints(s)
+		if m.anonymizeLogs() {
+			m.logger.EmojiPrintf(":moneybag:", "%s (%s%s%s points), Total Points [hidden]", m.styledStreamerName(s), colorCyan, points, colorReset)
+			if s.History != nil {
+				for reason, entry := range s.History {
+					m.logger.Printf("                         %s (%d times, [hidden])", reason, entry.Count)
+				}
+			}
+		} else {
+			m.logger.EmojiPrintf(":moneybag:", "%s (%s%s%s points), Total Points %s%s%d%s", m.styledStreamerName(s), colorCyan, points, colorReset, signColor, sign, total, colorReset)
+			if s.History != nil {
+				for reason, entry := range s.History {
+					m.logger.Printf("                         %s (%d times, %d gained)", reason, entry.Count, entry.Amount)
+				}
 			}
 		}
 	}
@@ -922,15 +939,15 @@ func (m *Miner) shutdown(sessionID string) {
 func (m *Miner) updatePresence(streamer *entities.Streamer) {
 	online, err := m.twitch.CheckStreamerOnline(streamer)
 	if err != nil {
-		m.logger.Printf("online check %s: %v", styledStreamerName(streamer), err)
+		m.logger.Printf("online check %s: %v", m.styledStreamerName(streamer), err)
 		return
 	}
 	m.setPresence(streamer, online, "poll")
 }
 
 func (m *Miner) logOnline(streamer *entities.Streamer) {
-	name := styledStreamerName(streamer)
-	points := formatChannelPoints(streamer.ChannelPoints)
+	name := m.styledStreamerName(streamer)
+	points := m.formattedStreamerPoints(streamer)
 	gameSuffix := ""
 	if suffix := m.gameSuffix(streamer); suffix != "" {
 		gameSuffix = fmt.Sprintf(" | %s %s", fmt.Sprintf("%sPlaying:%s", colorGameLabel, colorReset), suffix)
@@ -939,8 +956,8 @@ func (m *Miner) logOnline(streamer *entities.Streamer) {
 }
 
 func (m *Miner) logOffline(streamer *entities.Streamer) {
-	name := styledStreamerName(streamer)
-	points := formatChannelPoints(streamer.ChannelPoints)
+	name := m.styledStreamerName(streamer)
+	points := m.formattedStreamerPoints(streamer)
 	m.logger.EmojiPrintf(":sleeping:", "%s (%s%s%s points) is %sOffline%s!", name, colorCyan, points, colorReset, colorRed, colorReset)
 }
 
@@ -954,7 +971,7 @@ func (m *Miner) handleGameChange(streamer *entities.Streamer, previous, current 
 	if current == "" || previous == "" || strings.EqualFold(previous, current) {
 		return
 	}
-	m.logger.EmojiPrintf(":video_game:", "%s now playing: %s!", styledStreamerName(streamer), current)
+	m.logger.EmojiPrintf(":video_game:", "%s now playing: %s!", m.styledStreamerName(streamer), current)
 }
 
 func displayName(name string) string {
@@ -964,15 +981,40 @@ func displayName(name string) string {
 	return strings.ToUpper(name[:1]) + name[1:]
 }
 
-func styledStreamerName(streamer *entities.Streamer) string {
+func (m *Miner) anonymizeLogs() bool {
+	return m != nil && m.anonymizer != nil && m.anonymizer.Enabled()
+}
+
+func (m *Miner) rawStreamerName(raw string) string {
+	if m.anonymizeLogs() {
+		return m.anonymizer.Name(raw)
+	}
+	return raw
+}
+
+func (m *Miner) styledStreamerName(streamer *entities.Streamer) string {
 	if streamer == nil {
 		return ""
 	}
 	name := displayName(streamer.Username)
+	if m.anonymizeLogs() {
+		name = m.anonymizer.StreamerName(streamer)
+	}
 	if streamer.HasActiveMultipliers() {
 		return fmt.Sprintf("%s%s%s", colorDropsAccent, name, colorReset)
 	}
 	return name
+}
+
+func (m *Miner) formattedStreamerPoints(streamer *entities.Streamer) string {
+	if streamer == nil {
+		return ""
+	}
+	points := streamer.ChannelPoints
+	if m.anonymizeLogs() {
+		points = m.anonymizer.PseudoChannelPoints(streamer)
+	}
+	return formatChannelPoints(points)
 }
 
 func formatChannelPoints(points int) string {
@@ -1059,8 +1101,8 @@ func (m *Miner) logPointsDelta(streamer *entities.Streamer, delta int, reason st
 	if delta == 0 {
 		return
 	}
-	name := styledStreamerName(streamer)
-	points := formatChannelPoints(streamer.ChannelPoints)
+	name := m.styledStreamerName(streamer)
+	points := m.formattedStreamerPoints(streamer)
 	sign := "+"
 	valueColor := colorGreen
 	if delta < 0 {
@@ -1202,11 +1244,11 @@ func (m *Miner) startChatWatcher(streamer *entities.Streamer) {
 		m.chatMu.Unlock()
 		return
 	}
-	watcher := classpkg.NewChatClient(m.Username, token, streamer.Username, m.logger, false)
+	watcher := classpkg.NewChatClient(m.Username, token, streamer.Username, m.logger, false, m.anonymizer)
 	m.chatWatchers[key] = watcher
 	m.chatMu.Unlock()
 	if m.logger != nil {
-		m.logger.EmojiPrintf(":speech_balloon:", "Join IRC Chat: %s", styledStreamerName(streamer))
+		m.logger.EmojiPrintf(":speech_balloon:", "Join IRC Chat: %s", m.styledStreamerName(streamer))
 	}
 	watcher.Start()
 }
@@ -1224,7 +1266,7 @@ func (m *Miner) stopChatWatcher(streamer *entities.Streamer) {
 	m.chatMu.Unlock()
 	if ok && watcher != nil {
 		if m.logger != nil {
-			m.logger.EmojiPrintf(":speech_balloon:", "Leave IRC Chat: %s", styledStreamerName(streamer))
+			m.logger.EmojiPrintf(":speech_balloon:", "Leave IRC Chat: %s", m.styledStreamerName(streamer))
 		}
 		watcher.Stop()
 	}

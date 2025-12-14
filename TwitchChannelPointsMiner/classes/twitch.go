@@ -18,6 +18,7 @@ import (
 
 	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/classes/entities"
 	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/constants"
+	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/privacy"
 	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/utils"
 )
 
@@ -42,6 +43,7 @@ type Twitch struct {
 	settingsRegex  *regexp.Regexp
 	spadeRegex     *regexp.Regexp
 	logger         debugLogger
+	anonymizer     *privacy.Anonymizer
 	onGameChange   func(streamer *entities.Streamer, previous, current string)
 }
 
@@ -52,7 +54,7 @@ type ClaimedDrop struct {
 	RequiredValue int
 }
 
-func NewTwitch(username, userAgent, password string, logger debugLogger) (*Twitch, error) {
+func NewTwitch(username, userAgent, password string, logger debugLogger, anonymizer *privacy.Anonymizer) (*Twitch, error) {
 	deviceID := randomString(32)
 	login, err := NewTwitchLogin(constants.ClientID, deviceID, username, userAgent, password)
 	if err != nil {
@@ -70,6 +72,7 @@ func NewTwitch(username, userAgent, password string, logger debugLogger) (*Twitc
 		settingsRegex:  regexp.MustCompile(`(https://static\.twitchcdn\.net/config/settings.*?\.js|https://assets\.twitch\.tv/config/settings.*?\.js)`),
 		spadeRegex:     regexp.MustCompile(`"spade_url":"(.*?)"`),
 		logger:         logger,
+		anonymizer:     anonymizer,
 	}, nil
 }
 
@@ -152,9 +155,10 @@ func (t *Twitch) postGQLWithHeaders(payload interface{}, extraHeaders map[string
 	if err != nil {
 		return nil, err
 	}
-	t.debugf("GQL %s | Status %d | Request: %s | Response: %s", operationName(payload), resp.StatusCode, strings.TrimSpace(string(body)), strings.TrimSpace(string(respBody)))
-	if t.logger != nil && t.logger.DebugEnabled() {
-		t.logger.Debugf("GQL %s | Status %d | Headers: %v | Request: %s | Response: %s", operationName(payload), resp.StatusCode, req.Header, strings.TrimSpace(string(body)), strings.TrimSpace(string(respBody)))
+	if t.anonymizer != nil && t.anonymizer.Enabled() {
+		t.debugf("GQL %s | Status %d", operationName(payload), resp.StatusCode)
+	} else {
+		t.debugf("GQL %s | Status %d | Headers: %v | Request: %s | Response: %s", operationName(payload), resp.StatusCode, req.Header, strings.TrimSpace(string(body)), strings.TrimSpace(string(respBody)))
 	}
 	var result map[string]interface{}
 	if err := json.Unmarshal(respBody, &result); err != nil {
@@ -232,7 +236,11 @@ func (t *Twitch) LoadChannelPointsContext(streamer *entities.Streamer) (int, err
 	}
 	channel := navigate(resp, "data.community.channel")
 	if channel == nil {
-		return 0, fmt.Errorf("channel missing for %s", streamer.Username)
+		name := streamer.Username
+		if t.anonymizer != nil && t.anonymizer.Enabled() {
+			name = t.anonymizer.StreamerName(streamer)
+		}
+		return 0, fmt.Errorf("channel missing for %s", name)
 	}
 	self := navigate(resp, "data.community.channel.self.communityPoints")
 	pointsData, _ := self.(map[string]interface{})
@@ -258,19 +266,41 @@ func (t *Twitch) LoadChannelPointsContext(streamer *entities.Streamer) (int, err
 		claimID := fmt.Sprint(navigate(available, "id"))
 		if claimID == "" || claimID == "<nil>" {
 			if t.logger != nil && t.logger.DebugEnabled() {
-				t.logger.Debugf("availableClaim present but missing id for %s: %v", streamer.Username, available)
+				name := streamer.Username
+				if t.anonymizer != nil && t.anonymizer.Enabled() {
+					name = t.anonymizer.StreamerName(streamer)
+					t.logger.Debugf("availableClaim present but missing id for %s", name)
+				} else {
+					t.logger.Debugf("availableClaim present but missing id for %s: %v", name, available)
+				}
 			}
 			return balance, nil
 		}
 		if t.logger != nil {
-			t.logger.EmojiPrintf(":gift:", "Pending bonus detected for %s (claim %s, channel %s)", streamer.Username, claimID, streamer.ChannelID)
+			name := streamer.Username
+			if t.anonymizer != nil && t.anonymizer.Enabled() {
+				name = t.anonymizer.StreamerName(streamer)
+				t.logger.EmojiPrintf(":gift:", "Pending bonus detected for %s", name)
+			} else {
+				t.logger.EmojiPrintf(":gift:", "Pending bonus detected for %s (claim %s, channel %s)", name, claimID, streamer.ChannelID)
+			}
 		}
 		if err := t.ClaimBonus(streamer, claimID); err != nil {
 			if t.logger != nil {
-				t.logger.Errorf("claim bonus on context load for %s failed: %v", streamer.Username, err)
+				name := streamer.Username
+				if t.anonymizer != nil && t.anonymizer.Enabled() {
+					name = t.anonymizer.StreamerName(streamer)
+				}
+				t.logger.Errorf("claim bonus on context load for %s failed: %v", name, err)
 			}
 		} else if t.logger != nil {
-			t.logger.Printf("Claim bonus success for %s (claim %s)", streamer.Username, claimID)
+			name := streamer.Username
+			if t.anonymizer != nil && t.anonymizer.Enabled() {
+				name = t.anonymizer.StreamerName(streamer)
+				t.logger.Printf("Claim bonus success for %s", name)
+			} else {
+				t.logger.Printf("Claim bonus success for %s (claim %s)", name, claimID)
+			}
 		}
 	}
 	return balance, nil
@@ -425,7 +455,11 @@ func (t *Twitch) GetSpadeURL(streamer *entities.Streamer) error {
 	if err != nil {
 		return err
 	}
-	t.debugf("GetSpadeURL main page for %s status %d", streamer.Username, resp.StatusCode)
+	if t.anonymizer != nil && t.anonymizer.Enabled() {
+		t.debugf("GetSpadeURL main page status %d", resp.StatusCode)
+	} else {
+		t.debugf("GetSpadeURL main page for %s status %d", streamer.Username, resp.StatusCode)
+	}
 	match := t.settingsRegex.FindStringSubmatch(string(body))
 	if len(match) < 2 {
 		return errors.New("settings script not found")
@@ -443,13 +477,21 @@ func (t *Twitch) GetSpadeURL(streamer *entities.Streamer) error {
 	if err != nil {
 		return err
 	}
-	t.debugf("GetSpadeURL settings for %s status %d", streamer.Username, settingsResp.StatusCode)
+	if t.anonymizer != nil && t.anonymizer.Enabled() {
+		t.debugf("GetSpadeURL settings status %d", settingsResp.StatusCode)
+	} else {
+		t.debugf("GetSpadeURL settings for %s status %d", streamer.Username, settingsResp.StatusCode)
+	}
 	spade := t.spadeRegex.FindStringSubmatch(string(settingsBody))
 	if len(spade) < 2 {
 		return errors.New("spade url not found")
 	}
 	streamer.Stream.SpadeURL = spade[1]
-	t.debugf("Spade URL for %s resolved to %s", streamer.Username, streamer.Stream.SpadeURL)
+	if t.anonymizer != nil && t.anonymizer.Enabled() {
+		t.debugf("Spade URL resolved")
+	} else {
+		t.debugf("Spade URL for %s resolved to %s", streamer.Username, streamer.Stream.SpadeURL)
+	}
 	return nil
 }
 
@@ -472,17 +514,28 @@ func (t *Twitch) SendMinuteWatched(streamer *entities.Streamer) error {
 	req, _ := http.NewRequest(http.MethodPost, streamer.Stream.SpadeURL, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", t.userAgent)
-	t.debugf("Send minute watched payload to %s (%s)", streamer.Username, streamer.Stream.SpadeURL)
+	if t.anonymizer != nil && t.anonymizer.Enabled() {
+		t.debugf("Send minute watched payload")
+	} else {
+		t.debugf("Send minute watched payload to %s (%s)", streamer.Username, streamer.Stream.SpadeURL)
+	}
 	resp, err := t.client.Do(req)
 	if err != nil {
 		return err
 	}
 	bodyBytes, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	t.debugf("Minute watched response for %s: %d %s", streamer.Username, resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
+	if t.anonymizer != nil && t.anonymizer.Enabled() {
+		t.debugf("Minute watched response: %d", resp.StatusCode)
+	} else {
+		t.debugf("Minute watched response for %s: %d %s", streamer.Username, resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
+	}
 	if resp.StatusCode == http.StatusNoContent {
 		streamer.Stream.UpdateMinuteWatched()
 		return nil
+	}
+	if t.anonymizer != nil && t.anonymizer.Enabled() {
+		return fmt.Errorf("minute watched failed: %d", resp.StatusCode)
 	}
 	return fmt.Errorf("minute watched failed: %d %s", resp.StatusCode, string(bodyBytes))
 }
@@ -540,10 +593,17 @@ func (t *Twitch) claimBonusTV(streamer *entities.Streamer, claimID string) error
 	respBody, _ := io.ReadAll(resp.Body)
 
 	if t.logger != nil && t.logger.DebugEnabled() {
-		t.logger.Debugf("ClaimCommunityPoints status=%d headers=%v req=%s resp=%s", resp.StatusCode, req.Header, strings.TrimSpace(string(reqBody)), strings.TrimSpace(string(respBody)))
+		if t.anonymizer != nil && t.anonymizer.Enabled() {
+			t.logger.Debugf("ClaimCommunityPoints status=%d", resp.StatusCode)
+		} else {
+			t.logger.Debugf("ClaimCommunityPoints status=%d headers=%v req=%s resp=%s", resp.StatusCode, req.Header, strings.TrimSpace(string(reqBody)), strings.TrimSpace(string(respBody)))
+		}
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		if t.anonymizer != nil && t.anonymizer.Enabled() {
+			return fmt.Errorf("claim bonus status %d", resp.StatusCode)
+		}
 		return fmt.Errorf("claim bonus status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 
@@ -553,15 +613,24 @@ func (t *Twitch) claimBonusTV(streamer *entities.Streamer, claimID string) error
 	}
 
 	if gqlErrs, ok := result["errors"]; ok {
+		if t.anonymizer != nil && t.anonymizer.Enabled() {
+			return fmt.Errorf("claim bonus gql errors")
+		}
 		return fmt.Errorf("claim bonus gql errors: %v", gqlErrs)
 	}
 	if status := navigate(result, "data.claimCommunityPoints.status"); status != nil {
 		statusStr := strings.ToUpper(fmt.Sprint(status))
 		if statusStr != "" && statusStr != "SUCCESS" && statusStr != "ALREADY_CLAIMED" {
+			if t.anonymizer != nil && t.anonymizer.Enabled() {
+				return fmt.Errorf("claim bonus status %s", statusStr)
+			}
 			return fmt.Errorf("claim bonus status %s (resp=%v)", statusStr, result)
 		}
 	}
 	if msg := navigate(result, "data.claimCommunityPoints.error.message"); msg != nil {
+		if t.anonymizer != nil && t.anonymizer.Enabled() {
+			return fmt.Errorf("claim bonus error")
+		}
 		return fmt.Errorf("claim bonus error: %v (resp=%v)", msg, result)
 	}
 	return nil

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/constants"
+	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/privacy"
 )
 
 type ChatLogger interface {
@@ -23,6 +24,7 @@ type ChatClient struct {
 	channel             string
 	token               string
 	logger              ChatLogger
+	anonymizer          *privacy.Anonymizer
 	disableAtInNickname bool
 	stop                chan struct{}
 	stopped             chan struct{}
@@ -30,12 +32,13 @@ type ChatClient struct {
 	connMu              sync.Mutex
 }
 
-func NewChatClient(username, token, channel string, logger ChatLogger, disableAtInNickname bool) *ChatClient {
+func NewChatClient(username, token, channel string, logger ChatLogger, disableAtInNickname bool, anonymizer *privacy.Anonymizer) *ChatClient {
 	return &ChatClient{
 		username:            strings.ToLower(strings.TrimSpace(username)),
 		channel:             strings.ToLower(strings.TrimSpace(channel)),
 		token:               strings.TrimSpace(token),
 		logger:              logger,
+		anonymizer:          anonymizer,
 		disableAtInNickname: disableAtInNickname,
 		stop:                make(chan struct{}),
 		stopped:             make(chan struct{}),
@@ -60,7 +63,11 @@ func (c *ChatClient) run() {
 	defer close(c.stopped)
 	for {
 		if err := c.connectAndListen(); err != nil && !c.isStopped() && c.logger != nil {
-			c.logger.Errorf("chat #%s error: %v", c.channel, err)
+			if c.anonymizer != nil && c.anonymizer.Enabled() {
+				c.logger.Errorf("chat error: %v", err)
+			} else {
+				c.logger.Errorf("chat #%s error: %v", c.channel, err)
+			}
 		}
 		if c.isStopped() {
 			return
@@ -126,7 +133,11 @@ func (c *ChatClient) connectAndListen() error {
 func (c *ChatClient) handleLine(line string) {
 	if strings.Contains(strings.ToLower(line), "authentication failed") {
 		if c.logger != nil {
-			c.logger.Printf("chat #%s authentication failed", c.channel)
+			if c.anonymizer != nil && c.anonymizer.Enabled() {
+				c.logger.Printf("chat authentication failed")
+			} else {
+				c.logger.Printf("chat #%s authentication failed", c.channel)
+			}
 		}
 		c.closeConn()
 		return
@@ -158,11 +169,19 @@ func (c *ChatClient) handleLine(line string) {
 		return
 	}
 	if c.logger != nil {
-		displayNick := nick
-		if displayNick == "" {
-			displayNick = "unknown"
+		if c.anonymizer != nil && c.anonymizer.Enabled() {
+			channel := c.channel
+			if channel != "" {
+				channel = c.anonymizer.Name(channel)
+			}
+			c.logger.EmojiPrintf(":speech_balloon:", "Chat mention in %s", channel)
+		} else {
+			displayNick := nick
+			if displayNick == "" {
+				displayNick = "unknown"
+			}
+			c.logger.EmojiPrintf(":speech_balloon:", "%s at #%s wrote: %s", displayNick, c.channel, msg)
 		}
-		c.logger.EmojiPrintf(":speech_balloon:", "%s at #%s wrote: %s", displayNick, c.channel, msg)
 	}
 }
 

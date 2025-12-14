@@ -46,6 +46,10 @@ type streamerSettingsConfig struct {
 	IRCMode         *string   `json:"chat_presence"`
 }
 
+type privacyConfig struct {
+	AnonymizeLogs bool `json:"anonymize_logs"`
+}
+
 type config struct {
 	Username                   string `json:"username"`
 	Password                   string `json:"password"`
@@ -67,12 +71,13 @@ type config struct {
 	ShowGame                   bool   `json:"show_game"`
 	IRCMode                    string `json:"chat_presence"`
 	// ShowDropsIndicator         bool      `json:"show_drops_indicator"`
-	Streamers     []string  `json:"streamers"`
-	GamePriority  []string  `json:"game_priority"`
-	GameExclude   []string  `json:"game_exclude"`
-	WatchPriority []string  `json:"watch_priority"`
-	Bet           betConfig `json:"bet"`
-	Timezone      *string   `json:"timezone"`
+	Streamers     []string      `json:"streamers"`
+	GamePriority  []string      `json:"game_priority"`
+	GameExclude   []string      `json:"game_exclude"`
+	WatchPriority []string      `json:"watch_priority"`
+	Bet           betConfig     `json:"bet"`
+	Timezone      *string       `json:"timezone"`
+	Privacy       privacyConfig `json:"privacy"`
 
 	StreamerOverrides map[string]streamerSettingsConfig `json:"streamer_overrides"`
 }
@@ -221,6 +226,9 @@ func defaultConfig() map[string]interface{} {
 		"show_game":                     true,
 		"chat_presence":                 "ONLINE",
 		"timezone":                      nil,
+		"privacy": map[string]interface{}{
+			"anonymize_logs": false,
+		},
 		// "show_drops_indicator":          true,
 		"streamers":     []interface{}{},
 		"game_priority": []interface{}{},
@@ -263,6 +271,21 @@ func loadOrCreateConfig(path string) (config, error) {
 		if _, ok := cfgMap[key]; !ok {
 			cfgMap[key] = value
 			changed = true
+		}
+	}
+
+	privacyRaw, ok := cfgMap["privacy"].(map[string]interface{})
+	if !ok {
+		privacyRaw = defaultConfig()["privacy"].(map[string]interface{})
+		cfgMap["privacy"] = privacyRaw
+		changed = true
+	} else {
+		defaultPrivacy := defaultConfig()["privacy"].(map[string]interface{})
+		for k, v := range defaultPrivacy {
+			if _, ok := privacyRaw[k]; !ok {
+				privacyRaw[k] = v
+				changed = true
+			}
 		}
 	}
 
@@ -402,6 +425,7 @@ func main() {
 		ShowClaimedBonus: cfg.ShowClaimedBonusMsg,
 		Less:             false,
 		Debug:            cfg.Debug,
+		AnonymizeLogs:    cfg.Privacy.AnonymizeLogs,
 	}
 
 	logger := miner.NewLogger(loggerSettings, cfg.Username)

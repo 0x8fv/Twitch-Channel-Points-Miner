@@ -22,6 +22,7 @@ type LoggerSettings struct {
 	ShowClaimedBonus bool `json:"show_claimed_bonus_msg"`
 	Less             bool `json:"less"`
 	Debug            bool `json:"debug"`
+	AnonymizeLogs    bool `json:"anonymize_logs"`
 }
 
 type Logger struct {
@@ -57,7 +58,7 @@ func NewLogger(settings LoggerSettings, username string) *Logger {
 		logDir := "log"
 		if err := os.MkdirAll(logDir, 0o755); err == nil {
 			name := strings.TrimSpace(username)
-			if name == "" {
+			if settings.AnonymizeLogs || name == "" {
 				name = "miner"
 			}
 			name = sanitizeFilename(name)

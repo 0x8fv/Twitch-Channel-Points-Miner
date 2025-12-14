@@ -19,7 +19,7 @@ func (s *stubChatLogger) EmojiPrintf(emoji, format string, args ...interface{}) 
 }
 
 func TestNewChatClientNormalizesInput(t *testing.T) {
-	client := NewChatClient("UserName", " token ", "Channel ", nil, false)
+	client := NewChatClient("UserName", " token ", "Channel ", nil, false, nil)
 	if client.username != "username" || client.channel != "channel" || client.token != "token" {
 		t.Fatalf("normalization failed: %#v", client)
 	}
@@ -27,7 +27,7 @@ func TestNewChatClientNormalizesInput(t *testing.T) {
 
 func TestHandleLineMentionLogging(t *testing.T) {
 	logger := &stubChatLogger{}
-	client := NewChatClient("target", "token", "chan", logger, false)
+	client := NewChatClient("target", "token", "chan", logger, false, nil)
 
 	client.handleLine(":nick!user PRIVMSG #chan :hello @target there")
 	if len(logger.calls) != 1 || logger.calls[0] != "emoji::speech_balloon:" {
@@ -37,7 +37,7 @@ func TestHandleLineMentionLogging(t *testing.T) {
 
 func TestHandleLineDisableAtNickname(t *testing.T) {
 	logger := &stubChatLogger{}
-	client := NewChatClient("target", "token", "chan", logger, true)
+	client := NewChatClient("target", "token", "chan", logger, true, nil)
 
 	client.handleLine(":nick!u PRIVMSG #chan :target is cool")
 	if len(logger.calls) != 1 {

@@ -10,6 +10,7 @@ import (
 
 	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/classes/entities"
 	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/constants"
+	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/privacy"
 
 	"github.com/gorilla/websocket"
 )
@@ -25,12 +26,34 @@ type Logger interface {
 type PubSubClient struct {
 	twitch      *Twitch
 	logger      Logger
+	anonymizer  *privacy.Anonymizer
 	streamers   []*entities.Streamer
 	streamerMap map[string]*entities.Streamer
 	predictions map[string]*PredictionEvent
 	predMu      sync.Mutex
 	onGain      func(streamer *entities.Streamer, earned int, reason string, balance int)
 	onPresence  func(streamer *entities.Streamer, online bool, reason string)
+}
+
+func (p *PubSubClient) anonymizeLogs() bool {
+	return p != nil && p.anonymizer != nil && p.anonymizer.Enabled()
+}
+
+func (p *PubSubClient) streamerName(streamer *entities.Streamer) string {
+	if streamer == nil {
+		return ""
+	}
+	if p.anonymizeLogs() {
+		return p.anonymizer.StreamerName(streamer)
+	}
+	return streamer.Username
+}
+
+func (p *PubSubClient) name(raw string) string {
+	if p.anonymizeLogs() {
+		return p.anonymizer.Name(raw)
+	}
+	return raw
 }
 
 func (p *PubSubClient) debugf(format string, args ...interface{}) {
@@ -42,6 +65,7 @@ func (p *PubSubClient) debugf(format string, args ...interface{}) {
 func NewPubSubClient(
 	twitch *Twitch,
 	logger Logger,
+	anonymizer *privacy.Anonymizer,
 	streamers []*entities.Streamer,
 	onGain func(*entities.Streamer, int, string, int),
 	onPresence func(*entities.Streamer, bool, string),
@@ -55,6 +79,7 @@ func NewPubSubClient(
 	return &PubSubClient{
 		twitch:      twitch,
 		logger:      logger,
+		anonymizer:  anonymizer,
 		streamers:   streamers,
 		streamerMap: streamerMap,
 		predictions: make(map[string]*PredictionEvent),
@@ -154,14 +179,21 @@ func (p *PubSubClient) connectAndListen(connIndex int, topics []string, stop <-c
 				}
 				return
 			}
-			p.debugf("PubSub[%d] recv: %s", connIndex, strings.TrimSpace(string(message)))
-
 			msgType := ""
 			var envelope map[string]interface{}
 			if err := json.Unmarshal(message, &envelope); err == nil {
 				if t, ok := envelope["type"].(string); ok {
 					msgType = strings.ToUpper(strings.TrimSpace(t))
 				}
+			}
+			if p.anonymizeLogs() {
+				if msgType != "" {
+					p.debugf("PubSub[%d] recv type=%s (%d bytes)", connIndex, msgType, len(message))
+				} else {
+					p.debugf("PubSub[%d] recv (%d bytes)", connIndex, len(message))
+				}
+			} else {
+				p.debugf("PubSub[%d] recv: %s", connIndex, strings.TrimSpace(string(message)))
 			}
 			if msgType == "PONG" {
 				lastPong = time.Now()
@@ -262,7 +294,15 @@ func (p *PubSubClient) listenTopics(conn *websocket.Conn, topics []string) error
 			"nonce": randomString(16),
 			"data":  data,
 		}
-		p.debugf("PubSub LISTEN %s", t)
+		if p.anonymizeLogs() {
+			prefix := t
+			if parts := strings.SplitN(t, ".", 2); len(parts) > 0 {
+				prefix = parts[0]
+			}
+			p.debugf("PubSub LISTEN %s", prefix)
+		} else {
+			p.debugf("PubSub LISTEN %s", t)
+		}
 		if err := conn.WriteJSON(payload); err != nil {
 			return err
 		}
@@ -301,12 +341,20 @@ func (p *PubSubClient) handleTopicMessage(envelope map[string]interface{}) error
 	if messageStr == "" {
 		return nil
 	}
-	p.debugf("PubSub topic %s payload %s", topic, strings.TrimSpace(messageStr))
 	var payload map[string]interface{}
 	if err := json.Unmarshal([]byte(messageStr), &payload); err != nil {
 		return err
 	}
 	msgType := strings.ToLower(fmt.Sprint(payload["type"]))
+	if p.anonymizeLogs() {
+		prefix := topic
+		if parts := strings.SplitN(topic, ".", 2); len(parts) > 0 {
+			prefix = parts[0]
+		}
+		p.debugf("PubSub topic %s type=%s", prefix, msgType)
+	} else {
+		p.debugf("PubSub topic %s payload %s", topic, strings.TrimSpace(messageStr))
+	}
 	channelID := channelIDFromPayload(payload, topic)
 
 	switch {
@@ -366,7 +414,7 @@ func (p *PubSubClient) processPlaybackMessage(topic string, payload map[string]i
 		}
 		live, err := p.twitch.IsStreamLive(streamer.ChannelID)
 		if err != nil {
-			p.logger.Errorf("live check %s: %v", streamer.Username, err)
+			p.logger.Errorf("live check %s: %v", p.streamerName(streamer), err)
 			return nil
 		}
 		if live {
@@ -395,13 +443,13 @@ func (p *PubSubClient) processRaidMessage(topic string, payload map[string]inter
 	}
 	streamer.LastRaidID = raidID
 	if err := p.twitch.JoinRaid(streamer, raidID); err != nil {
-		p.logger.Errorf("join raid %s->%s: %v", streamer.Username, target, err)
+		p.logger.Errorf("join raid %s->%s: %v", p.streamerName(streamer), p.name(target), err)
 		return nil
 	}
 	if target == "" {
 		target = "raid target"
 	}
-	p.logger.EmojiPrintf(":performing_arts:", "Joining raid from %s to %s", streamer.Username, target)
+	p.logger.EmojiPrintf(":performing_arts:", "Joining raid from %s to %s", p.streamerName(streamer), p.name(target))
 	return nil
 }
 
@@ -420,10 +468,10 @@ func (p *PubSubClient) processMomentMessage(topic string, payload map[string]int
 		return nil
 	}
 	if err := p.twitch.ClaimMoment(streamer, momentID); err != nil {
-		p.logger.Errorf("claim moment %s: %v", streamer.Username, err)
+		p.logger.Errorf("claim moment %s: %v", p.streamerName(streamer), err)
 		return nil
 	}
-	p.logger.EmojiPrintf(":video_camera:", "%s Claimed Moment", streamer.Username)
+	p.logger.EmojiPrintf(":video_camera:", "%s Claimed Moment", p.streamerName(streamer))
 	return nil
 }
 
@@ -486,12 +534,20 @@ func (p *PubSubClient) processClaimAvailable(payload map[string]interface{}, cha
 	}
 	streamer := p.streamerMap[channelID]
 	if streamer == nil || claimID == "" {
-		p.logger.Errorf("claim-available ignored: channel=%s claim=%s streamer=%v payload=%v", channelID, claimID, streamer != nil, payload)
+		if p.anonymizeLogs() {
+			p.logger.Errorf("claim-available ignored: [redacted]")
+		} else {
+			p.logger.Errorf("claim-available ignored: channel=%s claim=%s streamer=%v payload=%v", channelID, claimID, streamer != nil, payload)
+		}
 		return nil
 	}
 	// p.logger.EmojiPrintf(":gift:", "Claim bonus for %s (claim %s, channel %s)", streamer.Username, claimID, channelID)
 	if err := p.twitch.ClaimBonus(streamer, claimID); err != nil {
-		p.logger.Errorf("claim bonus %s (channel %s): %v", streamer.Username, channelID, err)
+		if p.anonymizeLogs() {
+			p.logger.Errorf("claim bonus %s: %v", p.streamerName(streamer), err)
+		} else {
+			p.logger.Errorf("claim bonus %s (channel %s): %v", streamer.Username, channelID, err)
+		}
 		return nil
 	}
 	// p.logger.Printf("Claim bonus success for %s (claim %s)", streamer.Username, claimID)
@@ -535,7 +591,7 @@ func (p *PubSubClient) processPredictionChannel(topic string, payload map[string
 		time.AfterFunc(wait, func() {
 			p.placePrediction(event.EventID)
 		})
-		p.logger.EmojiPrintf(":alarm_clock:", "Place bet after %s for %s", wait.Truncate(time.Second), streamer.Username)
+		p.logger.EmojiPrintf(":alarm_clock:", "Place bet after %s for %s", wait.Truncate(time.Second), p.streamerName(streamer))
 	case "event-updated":
 		var existing *PredictionEvent
 		p.predMu.Lock()
@@ -600,21 +656,33 @@ func (p *PubSubClient) placePrediction(eventID string) {
 	}
 	streamer := event.Streamer
 	if event.Status != "ACTIVE" {
-		p.logger.Printf("Skip bet for %s: event status is %s", streamer.Username, event.Status)
+		p.logger.Printf("Skip bet for %s: event status is %s", p.streamerName(streamer), event.Status)
 		return
 	}
 	if streamer.Settings.Bet.MinimumPoints != nil && streamer.ChannelPoints <= *streamer.Settings.Bet.MinimumPoints {
-		p.logger.Printf("Skip bet for %s: balance %d <= minimum_points %d", streamer.Username, streamer.ChannelPoints, *streamer.Settings.Bet.MinimumPoints)
+		if p.anonymizeLogs() {
+			p.logger.Printf("Skip bet for %s: balance below minimum_points", p.streamerName(streamer))
+		} else {
+			p.logger.Printf("Skip bet for %s: balance %d <= minimum_points %d", streamer.Username, streamer.ChannelPoints, *streamer.Settings.Bet.MinimumPoints)
+		}
 		return
 	}
 	decision := event.Decide(streamer.ChannelPoints)
 	if decision.OutcomeID == "" {
-		p.logger.Printf("Skip bet for %s: no outcome selected", streamer.Username)
+		p.logger.Printf("Skip bet for %s: no outcome selected", p.streamerName(streamer))
 		return
 	}
 	if skip, compared, reason := event.ShouldSkipByFilter(); skip {
 		if reason == "" {
-			reason = fmt.Sprintf("filter_condition not satisfied (current %s)", formatFloat(compared))
+			if p.anonymizeLogs() {
+				reason = "filter_condition not satisfied"
+			} else {
+				reason = fmt.Sprintf("filter_condition not satisfied (current %s)", formatFloat(compared))
+			}
+		}
+		if p.anonymizeLogs() {
+			p.logger.Printf("Skip bet for %s: %s", p.streamerName(streamer), reason)
+			return
 		}
 		p.logger.Printf("Skip bet for %s: %s", streamer.Username, reason)
 		return
@@ -628,11 +696,15 @@ func (p *PubSubClient) placePrediction(eventID string) {
 				reason = fmt.Sprintf("calculated stake %d below Twitch minimum", decision.Amount)
 			}
 		}
-		p.logger.Printf("Skip bet for %s: %s", streamer.Username, reason)
+		if p.anonymizeLogs() {
+			p.logger.Printf("Skip bet for %s: below Twitch minimum", p.streamerName(streamer))
+		} else {
+			p.logger.Printf("Skip bet for %s: %s", streamer.Username, reason)
+		}
 		return
 	}
 	if err := p.twitch.MakePrediction(event); err != nil {
-		p.logger.Errorf("prediction %s: %v", streamer.Username, err)
+		p.logger.Errorf("prediction %s: %v", p.streamerName(streamer), err)
 		return
 	}
 	event.BetPlaced = true
@@ -642,7 +714,11 @@ func (p *PubSubClient) placePrediction(eventID string) {
 	if outcome == "" {
 		outcome = decision.OutcomeID
 	}
-	p.logger.EmojiPrintf(":four_leaf_clover:", "Place %s points on: %s for %s", formatNumber(decision.Amount), outcome, streamer.Username)
+	if p.anonymizeLogs() {
+		p.logger.EmojiPrintf(":four_leaf_clover:", "Place bet on: %s for %s", outcome, p.streamerName(streamer))
+	} else {
+		p.logger.EmojiPrintf(":four_leaf_clover:", "Place %s points on: %s for %s", formatNumber(decision.Amount), outcome, streamer.Username)
+	}
 	recordHistory(streamer, "PREDICTION", -decision.Amount)
 }
 
@@ -699,9 +775,13 @@ func (p *PubSubClient) checkPendingClaims() {
 		if streamer == nil || streamer.Username == "" || streamer.ChannelID == "" {
 			continue
 		}
-		p.debugf("Checking pending bonus for %s (%s)", streamer.Username, streamer.ChannelID)
+		if p.anonymizeLogs() {
+			p.debugf("Checking pending bonus for %s", p.streamerName(streamer))
+		} else {
+			p.debugf("Checking pending bonus for %s (%s)", streamer.Username, streamer.ChannelID)
+		}
 		if _, err := p.twitch.LoadChannelPointsContext(streamer); err != nil {
-			p.logger.Errorf("pending bonus check %s: %v", streamer.Username, err)
+			p.logger.Errorf("pending bonus check %s: %v", p.streamerName(streamer), err)
 		}
 	}
 }
@@ -798,10 +878,27 @@ func (p *PubSubClient) logPredictionResult(event *PredictionEvent, result map[st
 	} else if gained == 0 {
 		color = constants.ColorReset
 	}
+	label := event.String()
+	if p.anonymizeLogs() {
+		name := ""
+		if event.Streamer != nil {
+			name = p.streamerName(event.Streamer)
+		}
+		if name != "" && event.Title != "" {
+			label = fmt.Sprintf("EventPrediction: %s - %s", name, event.Title)
+		} else if name != "" {
+			label = fmt.Sprintf("EventPrediction: %s", name)
+		} else if event.Title != "" {
+			label = fmt.Sprintf("EventPrediction: %s", event.Title)
+		} else {
+			label = "EventPrediction"
+		}
+		resultString = resultType
+	}
 	p.logger.EmojiPrintf(
 		":bar_chart:",
 		"%s - Decision: %s - Result: %s%s%s",
-		event.String(),
+		label,
 		decisionLabel,
 		color,
 		resultString,
