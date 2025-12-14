@@ -162,7 +162,6 @@ func (p *PredictionEvent) Decide(balance int) PredictionDecision {
 		Amount:    amount,
 	}
 	p.Decision = decision
-	p.BetPlaced = amount > 0
 	return decision
 }
 

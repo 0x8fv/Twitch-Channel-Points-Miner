@@ -700,9 +700,18 @@ func (p *PubSubClient) placePrediction(eventID string) {
 	if !ok || event == nil || event.Streamer == nil {
 		return
 	}
+	stopTracking := func(markResult string) {
+		if event != nil && markResult != "" {
+			event.ResultType = markResult
+		}
+		p.predMu.Lock()
+		delete(p.predictions, eventID)
+		p.predMu.Unlock()
+	}
 	streamer := event.Streamer
 	if event.Status != "ACTIVE" {
 		p.logger.Printf("Skip bet for %s: event status is %s", p.streamerName(streamer), event.Status)
+		stopTracking("SKIPPED")
 		return
 	}
 	if streamer.Settings.Bet.MinimumPoints != nil && streamer.ChannelPoints <= *streamer.Settings.Bet.MinimumPoints {
@@ -711,11 +720,13 @@ func (p *PubSubClient) placePrediction(eventID string) {
 		} else {
 			p.logger.Printf("Skip bet for %s: balance %d <= minimum_points %d", streamer.Username, streamer.ChannelPoints, *streamer.Settings.Bet.MinimumPoints)
 		}
+		stopTracking("SKIPPED")
 		return
 	}
 	decision := event.Decide(streamer.ChannelPoints)
 	if decision.OutcomeID == "" {
 		p.logger.Printf("Skip bet for %s: no outcome selected", p.streamerName(streamer))
+		stopTracking("SKIPPED")
 		return
 	}
 	if skip, compared, reason := event.ShouldSkipByFilter(); skip {
@@ -728,9 +739,11 @@ func (p *PubSubClient) placePrediction(eventID string) {
 		}
 		if p.anonymizeLogs() {
 			p.logger.Printf("Skip bet for %s: %s", p.streamerName(streamer), reason)
+			stopTracking("SKIPPED")
 			return
 		}
 		p.logger.Printf("Skip bet for %s: %s", streamer.Username, reason)
+		stopTracking("SKIPPED")
 		return
 	}
 	if decision.Amount < 10 {
@@ -747,10 +760,12 @@ func (p *PubSubClient) placePrediction(eventID string) {
 		} else {
 			p.logger.Printf("Skip bet for %s: %s", streamer.Username, reason)
 		}
+		stopTracking("SKIPPED")
 		return
 	}
 	if err := p.twitch.MakePrediction(event); err != nil {
 		p.logger.Errorf("prediction %s: %v", p.streamerName(streamer), err)
+		stopTracking("ERROR")
 		return
 	}
 	event.BetPlaced = true
@@ -963,7 +978,7 @@ func (p *PubSubClient) logPredictionResult(event *PredictionEvent, result map[st
 }
 
 func (p *PubSubClient) resolvePredictionFromChannel(event *PredictionEvent, eventMap map[string]interface{}) {
-	if event == nil || event.Decision.Amount == 0 || event.ResultType != "" {
+	if event == nil || !event.BetPlaced || event.Decision.Amount == 0 || event.ResultType != "" {
 		return
 	}
 	status := strings.ToUpper(stringOrDefault(eventMap["status"]))
