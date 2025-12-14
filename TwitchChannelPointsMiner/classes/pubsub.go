@@ -2,8 +2,10 @@ package classes
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +24,8 @@ type Logger interface {
 	Debugf(format string, args ...interface{})
 	DebugEnabled() bool
 }
+
+var ErrPubSubReconnectRequested = errors.New("pubsub reconnect requested")
 
 type PubSubClient struct {
 	twitch      *Twitch
@@ -125,6 +129,11 @@ func (p *PubSubClient) run(connIndex int, topics []string, stop <-chan struct{})
 		}
 
 		if err := p.connectAndListen(connIndex, topics, stop); err != nil {
+			if errors.Is(err, ErrPubSubReconnectRequested) {
+				p.logger.Printf("PubSub[%d] reconnect requested; waiting ~60 seconds", connIndex)
+				time.Sleep(60 * time.Second)
+				continue
+			}
 			p.logger.Errorf("PubSub[%d] connection error: %v", connIndex, err)
 			time.Sleep(10 * time.Second)
 		}
@@ -209,6 +218,34 @@ func (p *PubSubClient) connectAndListen(connIndex int, topics []string, stop <-c
 			if msgType == "PONG" {
 				lastPong = time.Now()
 				continue
+			}
+			if msgType == "RECONNECT" {
+				select {
+				case readErr <- fmt.Errorf("PubSub[%d] server requested reconnect: %w", connIndex, ErrPubSubReconnectRequested):
+				default:
+				}
+				return
+			}
+			if msgType == "RESPONSE" && envelope != nil {
+				if respErr, ok := envelope["error"].(string); ok && strings.TrimSpace(respErr) != "" {
+					nonce := strings.TrimSpace(fmt.Sprint(envelope["nonce"]))
+					if nonce != "" {
+						p.logger.Errorf("PubSub[%d] RESPONSE error nonce=%s: %s", connIndex, nonce, respErr)
+					} else {
+						p.logger.Errorf("PubSub[%d] RESPONSE error: %s", connIndex, respErr)
+					}
+					if strings.Contains(respErr, "ERR_BADAUTH") {
+						username := ""
+						if p != nil && p.twitch != nil && p.twitch.twitchLogin != nil {
+							username = strings.TrimSpace(p.twitch.twitchLogin.Username)
+						}
+						cookieFile := filepath.Join("cookies", "<username>.json")
+						if username != "" {
+							cookieFile = filepath.Join("cookies", fmt.Sprintf("%s.json", username))
+						}
+						p.logger.Errorf("PubSub[%d] ERR_BADAUTH: most likely you have an outdated cookie file %q. Delete this file and try again.", connIndex, cookieFile)
+					}
+				}
 			}
 
 			select {
