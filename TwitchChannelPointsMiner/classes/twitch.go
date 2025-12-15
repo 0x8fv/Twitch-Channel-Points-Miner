@@ -150,9 +150,24 @@ func (t *Twitch) PostGQL(payload interface{}) (map[string]interface{}, error) {
 	return t.postGQLWithHeaders(payload, nil)
 }
 
+func (t *Twitch) PostGQLDecode(payload interface{}, out interface{}) error {
+	return t.postGQLDecodeWithHeaders(payload, nil, out)
+}
+
 func (t *Twitch) postGQLWithHeaders(payload interface{}, extraHeaders map[string]string) (map[string]interface{}, error) {
 	if payload == nil {
 		return map[string]interface{}{}, nil
+	}
+	var result map[string]interface{}
+	if err := t.postGQLDecodeWithHeaders(payload, extraHeaders, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (t *Twitch) postGQLDecodeWithHeaders(payload interface{}, extraHeaders map[string]string, out interface{}) error {
+	if payload == nil {
+		return nil
 	}
 	body, _ := json.Marshal(payload)
 	req, _ := http.NewRequest(http.MethodPost, constants.GQLOperations.URL, bytes.NewReader(body))
@@ -170,27 +185,44 @@ func (t *Twitch) postGQLWithHeaders(payload interface{}, extraHeaders map[string
 	resp, err := t.client.Do(req)
 	if err != nil {
 		t.debugf("GQL request failed: %v", err)
-		return nil, err
+		return err
 	}
-	respBody, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if err != nil {
-		return nil, err
-	}
+	defer resp.Body.Close()
+
 	t.debugf("GQL %s | Status %d", operationName(payload), resp.StatusCode)
-	t.deepDebugf(
-		"GQL %s | Status %d | Headers: %v | Request: %s | Response: %s",
-		operationName(payload),
-		resp.StatusCode,
-		req.Header,
-		strings.TrimSpace(string(body)),
-		strings.TrimSpace(string(respBody)),
-	)
-	var result map[string]interface{}
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, err
+
+	deepEnabled := false
+	if t.anonymizer == nil || !t.anonymizer.Enabled() {
+		if deep, ok := t.logger.(deepDebugLogger); ok && deep.DeepDebugEnabled() {
+			deepEnabled = true
+		}
 	}
-	return result, nil
+
+	if deepEnabled {
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		t.deepDebugf(
+			"GQL %s | Status %d | Headers: %v | Request: %s | Response: %s",
+			operationName(payload),
+			resp.StatusCode,
+			req.Header,
+			strings.TrimSpace(string(body)),
+			strings.TrimSpace(string(respBody)),
+		)
+		if out == nil {
+			return nil
+		}
+		return json.Unmarshal(respBody, out)
+	}
+
+	if out == nil {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil
+	}
+	dec := json.NewDecoder(resp.Body)
+	return dec.Decode(out)
 }
 
 func (t *Twitch) GetChannelID(login string) (string, error) {
@@ -256,11 +288,11 @@ func (t *Twitch) LoadChannelPointsContext(streamer *entities.Streamer) (int, err
 		op.Variables = map[string]interface{}{}
 	}
 	op.Variables["channelLogin"] = streamer.Username
-	resp, err := t.PostGQL(op)
-	if err != nil {
+	var resp gqlChannelPointsContextResponse
+	if err := t.PostGQLDecode(op, &resp); err != nil {
 		return 0, err
 	}
-	channel := navigate(resp, "data.community.channel")
+	channel := resp.Data.Community.Channel
 	if channel == nil {
 		name := streamer.Username
 		if t.anonymizer != nil && t.anonymizer.Enabled() {
@@ -268,36 +300,28 @@ func (t *Twitch) LoadChannelPointsContext(streamer *entities.Streamer) (int, err
 		}
 		return 0, fmt.Errorf("channel missing for %s", name)
 	}
-	self := navigate(resp, "data.community.channel.self.communityPoints")
-	pointsData, _ := self.(map[string]interface{})
-	balance := int(fromFloat(pointsData["balance"]))
+	pointsData := channel.Self.CommunityPoints
+	balance := pointsData.Balance
 	streamer.ChannelPoints = balance
-	if active, ok := pointsData["activeMultipliers"].([]interface{}); ok {
-		multipliers := make([]map[string]interface{}, 0, len(active))
-		for _, item := range active {
-			if m, ok := item.(map[string]interface{}); ok {
-				multipliers = append(multipliers, m)
-			}
-		}
-		streamer.ActiveMultipliers = multipliers
+	if len(pointsData.ActiveMultipliers) > 0 {
+		streamer.ActiveMultipliers = pointsData.ActiveMultipliers
 	} else {
 		streamer.ActiveMultipliers = nil
 	}
 	if streamer.Settings.CommunityGoals {
-		goals := navigate(resp, "data.community.channel.communityPointsSettings.goals")
-		streamer.CommunityGoals = parseCommunityGoals(goals)
+		streamer.CommunityGoals = parseCommunityGoalsJSON(channel.CommunityPointsSettings.Goals)
 		t.ContributeToCommunityGoals(streamer)
 	}
-	if available := navigate(resp, "data.community.channel.self.communityPoints.availableClaim"); available != nil {
-		claimID := fmt.Sprint(navigate(available, "id"))
-		if claimID == "" || claimID == "<nil>" {
+	if pointsData.AvailableClaim != nil {
+		claimID := pointsData.AvailableClaim.ID
+		if claimID == "" {
 			if t.logger != nil && t.logger.DebugEnabled() {
 				name := streamer.Username
 				if t.anonymizer != nil && t.anonymizer.Enabled() {
 					name = t.anonymizer.StreamerName(streamer)
 					t.logger.Debugf("availableClaim present but missing id for %s", name)
 				} else {
-					t.logger.Debugf("availableClaim present but missing id for %s: %v", name, available)
+					t.logger.Debugf("availableClaim present but missing id for %s", name)
 				}
 			}
 			return balance, nil
@@ -357,33 +381,47 @@ func (t *Twitch) IsStreamLive(channelID string) (bool, error) {
 		op.Variables = map[string]interface{}{}
 	}
 	op.Variables["id"] = channelID
-	resp, err := t.PostGQL(op)
-	if err != nil || resp == nil {
+	var resp gqlIsStreamLiveResponse
+	if err := t.PostGQLDecode(op, &resp); err != nil {
 		return false, err
 	}
-	stream := navigate(resp, "data.user.stream")
-	return stream != nil, nil
+	if resp.Data.User == nil {
+		return false, nil
+	}
+	return resp.Data.User.Stream != nil, nil
 }
 
-func (t *Twitch) streamInfo(username string) (map[string]interface{}, error) {
+type streamInfoResult struct {
+	StreamID     string
+	Title        string
+	Game         map[string]interface{}
+	Tags         []map[string]interface{}
+	ViewersCount int
+}
+
+func (t *Twitch) streamInfo(username string) (*streamInfoResult, error) {
 	op := constants.ClonePersistedOperation(constants.GQLOperations.VideoPlayerStreamInfoOverlay)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
 	op.Variables["channel"] = strings.ToLower(username)
-	resp, err := t.PostGQL(op)
-	if err != nil {
+	var resp gqlStreamInfoOverlayResponse
+	if err := t.PostGQLDecode(op, &resp); err != nil {
 		return nil, err
 	}
-	stream := navigate(resp, "data.user.stream")
-	if stream == nil {
-		return nil, ErrStreamerOffline
-	}
-	user := navigate(resp, "data.user")
-	if user == nil {
+	if resp.Data.User == nil {
 		return nil, fmt.Errorf("missing user data for %s", username)
 	}
-	return user.(map[string]interface{}), nil
+	if resp.Data.User.Stream == nil || resp.Data.User.BroadcastSettings == nil {
+		return nil, ErrStreamerOffline
+	}
+	return &streamInfoResult{
+		StreamID:     resp.Data.User.Stream.ID,
+		Title:        resp.Data.User.BroadcastSettings.Title,
+		Game:         gameToInterfaceMap(resp.Data.User.BroadcastSettings.Game),
+		Tags:         tagsToInterfaceMaps(resp.Data.User.Stream.Tags),
+		ViewersCount: resp.Data.User.Stream.ViewersCount,
+	}, nil
 }
 
 // ? UpdateStream refreshes metadata and payload required for minute-watched events.
@@ -400,21 +438,13 @@ func (t *Twitch) UpdateStream(streamer *entities.Streamer) error {
 	if err != nil {
 		return err
 	}
-	streamData, _ := info["stream"].(map[string]interface{})
-	broadcastSettings, _ := info["broadcastSettings"].(map[string]interface{})
-	if streamData == nil || broadcastSettings == nil {
-		return ErrStreamerOffline
-	}
-	title, _ := broadcastSettings["title"].(string)
-	game, _ := broadcastSettings["game"].(map[string]interface{})
-	tagsIface, _ := streamData["tags"].([]interface{})
-	viewers := int(fromFloat(streamData["viewersCount"]))
+	game := info.Game
 	streamer.Stream.Update(
-		fmt.Sprint(streamData["id"]),
-		title,
+		info.StreamID,
+		info.Title,
 		game,
-		convertTags(tagsIface),
-		viewers,
+		info.Tags,
+		info.ViewersCount,
 		constants.DropID,
 	)
 	if prevBroadcastID != "" && prevBroadcastID != streamer.Stream.BroadcastID {

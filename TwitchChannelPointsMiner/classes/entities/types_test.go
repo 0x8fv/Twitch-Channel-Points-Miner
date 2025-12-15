@@ -26,10 +26,9 @@ func TestStreamerSettingsDefault(t *testing.T) {
 
 func TestStreamerMultipliers(t *testing.T) {
 	streamer := &Streamer{
-		ActiveMultipliers: []map[string]interface{}{
-			{"factor": 1.5},
-			{"factor": 2},
-			nil,
+		ActiveMultipliers: []ActiveMultiplier{
+			{Factor: 1.5},
+			{Factor: 2},
 		},
 	}
 	if !streamer.HasActiveMultipliers() {

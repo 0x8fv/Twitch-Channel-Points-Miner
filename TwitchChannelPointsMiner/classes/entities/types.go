@@ -96,21 +96,25 @@ type StreamerSettings struct {
 }
 
 type Streamer struct {
-	Username          string                   `json:"username"`
-	ChannelID         string                   `json:"channel_id"`
-	ChannelPoints     int                      `json:"channel_points"`
-	Settings          StreamerSettings         `json:"settings"`
-	StreamerURL       string                   `json:"-"`
-	IsOnline          bool                     `json:"-"`
-	PresenceKnown     bool                     `json:"-"`
-	OnlineAt          time.Time                `json:"-"`
-	OfflineAt         time.Time                `json:"-"`
-	Stream            *Stream                  `json:"-"`
-	PointsInit        bool                     `json:"-"`
-	ActiveMultipliers []map[string]interface{} `json:"-"`
-	LastRaidID        string                   `json:"-"`
+	Username          string             `json:"username"`
+	ChannelID         string             `json:"channel_id"`
+	ChannelPoints     int                `json:"channel_points"`
+	Settings          StreamerSettings   `json:"settings"`
+	StreamerURL       string             `json:"-"`
+	IsOnline          bool               `json:"-"`
+	PresenceKnown     bool               `json:"-"`
+	OnlineAt          time.Time          `json:"-"`
+	OfflineAt         time.Time          `json:"-"`
+	Stream            *Stream            `json:"-"`
+	PointsInit        bool               `json:"-"`
+	ActiveMultipliers []ActiveMultiplier `json:"-"`
+	LastRaidID        string             `json:"-"`
 	History           map[string]*HistoryEntry
 	CommunityGoals    map[string]*CommunityGoal `json:"-"`
+}
+
+type ActiveMultiplier struct {
+	Factor float64 `json:"factor"`
 }
 
 type HistoryEntry struct {
@@ -125,15 +129,7 @@ func (s *Streamer) HasActiveMultipliers() bool {
 func (s *Streamer) TotalMultiplier() float64 {
 	total := 0.0
 	for _, mult := range s.ActiveMultipliers {
-		if mult == nil {
-			continue
-		}
-		switch v := mult["factor"].(type) {
-		case float64:
-			total += v
-		case int:
-			total += float64(v)
-		}
+		total += mult.Factor
 	}
 	return total
 }
