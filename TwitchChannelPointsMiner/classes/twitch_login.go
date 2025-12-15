@@ -296,7 +296,7 @@ func (t *TwitchLogin) UserID() string {
 }
 
 func (t *TwitchLogin) checkLogin() bool {
-	payload := constants.GQLOperations.GetIDFromLogin
+	payload := constants.ClonePersistedOperation(constants.GQLOperations.GetIDFromLogin)
 	if payload.Variables == nil {
 		payload.Variables = map[string]interface{}{}
 	}

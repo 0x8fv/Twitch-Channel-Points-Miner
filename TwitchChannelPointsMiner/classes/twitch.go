@@ -194,7 +194,7 @@ func (t *Twitch) postGQLWithHeaders(payload interface{}, extraHeaders map[string
 }
 
 func (t *Twitch) GetChannelID(login string) (string, error) {
-	op := constants.GQLOperations.GetIDFromLogin
+	op := constants.ClonePersistedOperation(constants.GQLOperations.GetIDFromLogin)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -211,7 +211,7 @@ func (t *Twitch) GetChannelID(login string) (string, error) {
 }
 
 func (t *Twitch) GetFollowers(limit int, order entities.FollowersOrder) ([]string, error) {
-	op := constants.GQLOperations.ChannelFollows
+	op := constants.ClonePersistedOperation(constants.GQLOperations.ChannelFollows)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -251,7 +251,7 @@ func (t *Twitch) GetFollowers(limit int, order entities.FollowersOrder) ([]strin
 
 // ? LoadChannelPointsContext fetches points and claims any bonuses.
 func (t *Twitch) LoadChannelPointsContext(streamer *entities.Streamer) (int, error) {
-	op := constants.GQLOperations.ChannelPointsContext
+	op := constants.ClonePersistedOperation(constants.GQLOperations.ChannelPointsContext)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -352,7 +352,7 @@ func (t *Twitch) IsStreamLive(channelID string) (bool, error) {
 	if channelID == "" {
 		return false, fmt.Errorf("missing channel id")
 	}
-	op := constants.GQLOperations.WithIsStreamLiveQuery
+	op := constants.ClonePersistedOperation(constants.GQLOperations.WithIsStreamLiveQuery)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -366,7 +366,7 @@ func (t *Twitch) IsStreamLive(channelID string) (bool, error) {
 }
 
 func (t *Twitch) streamInfo(username string) (map[string]interface{}, error) {
-	op := constants.GQLOperations.VideoPlayerStreamInfoOverlay
+	op := constants.ClonePersistedOperation(constants.GQLOperations.VideoPlayerStreamInfoOverlay)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -585,7 +585,7 @@ func (t *Twitch) claimBonusTV(streamer *entities.Streamer, claimID string) error
 		return fmt.Errorf("missing claim id")
 	}
 
-	op := constants.GQLOperations.ClaimCommunityPoints
+	op := constants.ClonePersistedOperation(constants.GQLOperations.ClaimCommunityPoints)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -668,7 +668,7 @@ func (t *Twitch) ClaimMoment(streamer *entities.Streamer, momentID string) error
 	if momentID == "" {
 		return nil
 	}
-	op := constants.GQLOperations.CommunityMomentCalloutClaim
+	op := constants.ClonePersistedOperation(constants.GQLOperations.CommunityMomentCalloutClaim)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -682,7 +682,7 @@ func (t *Twitch) JoinRaid(streamer *entities.Streamer, raidID string) error {
 	if raidID == "" {
 		return fmt.Errorf("missing raid id")
 	}
-	op := constants.GQLOperations.JoinRaid
+	op := constants.ClonePersistedOperation(constants.GQLOperations.JoinRaid)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -699,7 +699,7 @@ func (t *Twitch) MakePrediction(event *PredictionEvent) error {
 	if event.Decision.Amount < 10 || event.Decision.OutcomeID == "" || event.EventID == "" {
 		return fmt.Errorf("invalid prediction decision")
 	}
-	op := constants.GQLOperations.MakePrediction
+	op := constants.ClonePersistedOperation(constants.GQLOperations.MakePrediction)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -715,7 +715,7 @@ func (t *Twitch) MakePrediction(event *PredictionEvent) error {
 
 // ? ClaimDrop claims a single drop instance.
 func (t *Twitch) ClaimDrop(dropInstanceID string) (bool, error) {
-	op := constants.GQLOperations.DropsPageClaimDropRewards
+	op := constants.ClonePersistedOperation(constants.GQLOperations.DropsPageClaimDropRewards)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -801,7 +801,7 @@ func (t *Twitch) ContributeToCommunityGoals(streamer *entities.Streamer) {
 		return
 	}
 
-	op := constants.GQLOperations.UserPointsContribution
+	op := constants.ClonePersistedOperation(constants.GQLOperations.UserPointsContribution)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -843,7 +843,7 @@ func (t *Twitch) ContributeToCommunityGoal(streamer *entities.Streamer, goalID, 
 	if amount <= 0 || goalID == "" {
 		return nil
 	}
-	op := constants.GQLOperations.ContributeCommunityPointsCommunityGoal
+	op := constants.ClonePersistedOperation(constants.GQLOperations.ContributeCommunityPointsCommunityGoal)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -940,7 +940,7 @@ func mapIntValue(data map[string]interface{}, keys ...string) int {
 
 // ? Fetch campaign IDs for a streamer if drops enabled.
 func (t *Twitch) CampaignIDsForStreamer(streamer *entities.Streamer) ([]string, error) {
-	op := constants.GQLOperations.DropsHighlightServiceAvailable
+	op := constants.ClonePersistedOperation(constants.GQLOperations.DropsHighlightServiceAvailable)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
