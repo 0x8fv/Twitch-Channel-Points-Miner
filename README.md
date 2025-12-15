@@ -103,7 +103,7 @@ Go rewrite of [0x8fv/Twitch-Channel-Points-Miner-v2](https://github.com/0x8fv/Tw
 
 ## Notes
 - Tested with Go 1.21; dependencies are in `go.mod`.
-- Shortcut commands: `go fmt ./...` to format, `go test ./...` (none present yet) for quick validation.
+- Shortcut commands: `go fmt ./...` to format, `go test ./...` to run unit tests.
 
 ## Disclaimer
 - This project comes with no guarantee or warranty. You are responsible for whatever happens from using this project. It is possible to get soft or hard banned by using this project if you are not careful. This is a personal project and is in no way affiliated with Twitch.
