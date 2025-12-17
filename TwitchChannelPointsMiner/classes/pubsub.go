@@ -818,7 +818,7 @@ func (p *PubSubClient) randomPingInterval() time.Duration {
 
 // ? pollPendingClaims proactively checks each streamer for any outstanding community-point bonuses.
 func (p *PubSubClient) pollPendingClaims(stop <-chan struct{}) {
-	ticker := time.NewTicker(2 * time.Minute)
+	ticker := time.NewTicker(5 * time.Hour)
 	defer ticker.Stop()
 	p.checkPendingClaims()
 	for {
