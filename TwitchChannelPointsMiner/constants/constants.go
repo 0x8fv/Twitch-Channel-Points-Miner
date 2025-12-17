@@ -100,11 +100,11 @@ var GQLOperations = struct {
 	IntegrityURL:                 "https://gql.twitch.tv/integrity",
 	WithIsStreamLiveQuery:        newPersistedOperation("WithIsStreamLiveQuery", "04e46329a6786ff3a81c01c50bfa5d725902507a0deb83b0edbf7abe7a3716ea", nil),
 	PlaybackAccessToken:          newPersistedOperation("PlaybackAccessToken", "3093517e37e4f4cb48906155bcd894150aef92617939236d2508f3375ab732ce", nil),
-	VideoPlayerStreamInfoOverlay: newPersistedOperation("VideoPlayerStreamInfoOverlayChannel", "a5f2e34d626a9f4f5c0204f910bab2194948a9502089be558bb6e779a9e1b3d2", nil),
+	VideoPlayerStreamInfoOverlay: newPersistedOperation("VideoPlayerStreamInfoOverlayChannel", "e785b65ff71ad7b363b34878335f27dd9372869ad0c5740a130b9268bcdbe7e7", nil),
 	ClaimCommunityPoints:         newPersistedOperation("ClaimCommunityPoints", "46aaeebe02c99afdf4fc97c7c0cba964124bf6b0af229395f1f6d1feed05b3d0", nil),
 	CommunityMomentCalloutClaim:  newPersistedOperation("CommunityMomentCallout_Claim", "e2d67415aead910f7f9ceb45a77b750a1e1d9622c936d832328a0689e054db62", nil),
 	DropsPageClaimDropRewards:    newPersistedOperation("DropsPage_ClaimDropRewards", "a455deea71bdc9015b78eb49f4acfbce8baa7ccbedd28e549bb025bd0f751930", nil),
-	ChannelPointsContext:         newPersistedOperation("ChannelPointsContext", "1530a003a7d374b0380b79db0be0534f30ff46e61cffa2bc0e2468a909fbc024", nil),
+	ChannelPointsContext:         newPersistedOperation("ChannelPointsContext", "374314de591e69925fce3ddc2bcf085796f56ebb8cad67a0daa3165c03adc345", nil),
 	JoinRaid:                     newPersistedOperation("JoinRaid", "c6a332a86d1087fbbb1a8623aa01bd1313d2386e7c63be60fdb2d1901f01a4ae", nil),
 	ModViewChannelQuery:          newPersistedOperation("ModViewChannelQuery", "df5d55b6401389afb12d3017c9b2cf1237164220c8ef4ed754eae8188068a807", nil),
 	Inventory: newPersistedOperation("Inventory", "d86775d0ef16a63a33ad52e80eaff963b2d5b72fada7c991504a57496e1d8e4b", map[string]interface{}{
