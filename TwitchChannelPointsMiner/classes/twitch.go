@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/classes/entities"
@@ -42,6 +43,9 @@ type Twitch struct {
 	deviceID       string
 	clientSession  string
 	clientVersion  string
+	versionMu      sync.Mutex
+	versionFetched time.Time
+	versionTTL     time.Duration
 	twitchLogin    *TwitchLogin
 	client         *http.Client
 	twilightRegexp *regexp.Regexp
@@ -71,6 +75,7 @@ func NewTwitch(username, userAgent, password string, logger debugLogger, anonymi
 		deviceID:       deviceID,
 		clientSession:  randomHex(8),
 		clientVersion:  constants.ClientVersion,
+		versionTTL:     10 * time.Hour,
 		twitchLogin:    login,
 		client:         login.Client(),
 		twilightRegexp: regexp.MustCompile(`window\.__twilightBuildID\s*=\s*"([0-9a-fA-F\-]{36})"`),
@@ -126,24 +131,55 @@ func (t *Twitch) deepDebugf(format string, args ...interface{}) {
 
 // ? UpdateClientVersion refreshes the Twitch build id used for GQL calls.
 func (t *Twitch) UpdateClientVersion() string {
-	resp, err := t.client.Get(constants.URL)
+	if t == nil {
+		return constants.ClientVersion
+	}
+
+	t.versionMu.Lock()
+	ttl := t.versionTTL
+	if ttl <= 0 {
+		ttl = 10 * time.Hour
+		t.versionTTL = ttl
+	}
+	if !t.versionFetched.IsZero() && time.Since(t.versionFetched) < ttl {
+		version := t.clientVersion
+		t.versionMu.Unlock()
+		return version
+	}
+	t.versionFetched = time.Now()
+	version := t.clientVersion
+	client := t.client
+	t.versionMu.Unlock()
+
+	if client == nil {
+		return version
+	}
+
+	resp, err := client.Get(constants.URL)
 	if err != nil {
-		return t.clientVersion
+		return version
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		t.debugf("UpdateClientVersion request failed with status %d", resp.StatusCode)
-		return t.clientVersion
+		return version
 	}
 	m := t.twilightRegexp.FindStringSubmatch(string(body))
 	if len(m) > 1 {
+		t.versionMu.Lock()
 		t.clientVersion = m[1]
-		t.debugf("Client version updated to %s", t.clientVersion)
+		version = t.clientVersion
+		t.versionMu.Unlock()
+		t.debugf("Client version updated to %s", version)
+		return version
 	} else {
 		t.debugf("UpdateClientVersion: unable to extract build id")
 	}
-	return t.clientVersion
+	t.versionMu.Lock()
+	version = t.clientVersion
+	t.versionMu.Unlock()
+	return version
 }
 
 func (t *Twitch) PostGQL(payload interface{}) (map[string]interface{}, error) {
