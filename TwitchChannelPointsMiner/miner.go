@@ -1139,15 +1139,24 @@ func (m *Miner) logPointsDelta(streamer *entities.Streamer, delta int, reason st
 func (m *Miner) handlePubSubGain(streamer *entities.Streamer, earned int, reason string, balance int) {
 	prev := streamer.ChannelPoints
 	expected := prev + earned
-	newBalance := balance
-	// ? Twitch may deliver PubSub gain events out of order; prefer monotonic increases
-	// ? to avoid logging negative deltas when an older balance arrives after a streak.
-	if newBalance < expected {
-		newBalance = expected
+
+	// ? Prefer applying the delta (`earned`) over trusting the absolute balance from PubSub
+	// ? PubSub messages can arrive out of order, and may contain a stale pre-spend balance
+	// ? (e.g. after placing a prediction bet), which would otherwise incorrectly inflate the local state
+	newBalance := expected
+	if earned == 0 && balance != 0 {
+		newBalance = balance
 	}
-	if newBalance < prev {
+
+	if newBalance < 0 {
+		newBalance = 0
+	}
+	// ? For positive earn events, keep the balance monotonic to avoid logging negative deltas
+	// ? when older balances arrive after a streak of gains.
+	if earned >= 0 && newBalance < prev {
 		newBalance = prev
 	}
+
 	streamer.ChannelPoints = newBalance
 	if !streamer.PointsInit {
 		streamer.PointsInit = true

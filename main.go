@@ -24,15 +24,16 @@ type filterConditionConfig struct {
 }
 
 type betConfig struct {
-	Strategy        string                 `json:"strategy"`
-	Percentage      *int                   `json:"percentage"`
-	PercentageGap   *int                   `json:"percentage_gap"`
-	MaxPoints       *int                   `json:"max_points"`
-	StealthMode     *bool                  `json:"stealth_mode"`
-	DelayMode       string                 `json:"delay_mode"`
-	Delay           *float64               `json:"delay"`
-	MinimumPoints   *int                   `json:"minimum_points"`
-	FilterCondition *filterConditionConfig `json:"filter_condition"`
+	Strategy           string                 `json:"strategy"`
+	Percentage         *int                   `json:"percentage"`
+	PercentageGap      *int                   `json:"percentage_gap"`
+	MaxPoints          *int                   `json:"max_points"`
+	StealthMode        *bool                  `json:"stealth_mode"`
+	DeductStakeOnPlace *bool                  `json:"deduct_stake_on_place"`
+	DelayMode          string                 `json:"delay_mode"`
+	Delay              *float64               `json:"delay"`
+	MinimumPoints      *int                   `json:"minimum_points"`
+	FilterCondition    *filterConditionConfig `json:"filter_condition"`
 }
 
 type streamerSettingsConfig struct {
@@ -102,6 +103,9 @@ func mergeBetSettings(base entities.BetSettings, override betConfig) entities.Be
 	}
 	if override.StealthMode != nil {
 		out.StealthMode = override.StealthMode
+	}
+	if override.DeductStakeOnPlace != nil {
+		out.DeductStakeOnPlace = override.DeductStakeOnPlace
 	}
 	if override.FilterCondition != nil {
 		out.FilterCondition = mergeFilterCondition(out.FilterCondition, override.FilterCondition)
@@ -242,14 +246,15 @@ func defaultConfig() map[string]interface{} {
 		},
 		"streamer_overrides": map[string]interface{}{},
 		"bet": map[string]interface{}{
-			"strategy":       nil,
-			"percentage":     nil,
-			"percentage_gap": nil,
-			"max_points":     nil,
-			"stealth_mode":   nil,
-			"delay_mode":     nil,
-			"delay":          nil,
-			"minimum_points": nil,
+			"strategy":              nil,
+			"percentage":            nil,
+			"percentage_gap":        nil,
+			"max_points":            nil,
+			"stealth_mode":          nil,
+			"deduct_stake_on_place": true,
+			"delay_mode":            nil,
+			"delay":                 nil,
+			"minimum_points":        nil,
 			"filter_condition": map[string]interface{}{
 				"by":    nil,
 				"where": nil,
@@ -355,15 +360,16 @@ func applyTimezoneOverride(raw *string, logger *miner.Logger) {
 
 func buildBaseStreamerSettings(cfg config) entities.StreamerSettings {
 	betSettings := entities.BetSettings{
-		Strategy:        entities.Strategy(cfg.Bet.Strategy),
-		Percentage:      cfg.Bet.Percentage,
-		PercentageGap:   cfg.Bet.PercentageGap,
-		MaxPoints:       cfg.Bet.MaxPoints,
-		StealthMode:     cfg.Bet.StealthMode,
-		DelayMode:       entities.DelayMode(cfg.Bet.DelayMode),
-		Delay:           cfg.Bet.Delay,
-		MinimumPoints:   cfg.Bet.MinimumPoints,
-		FilterCondition: mergeFilterCondition(nil, cfg.Bet.FilterCondition),
+		Strategy:           entities.Strategy(cfg.Bet.Strategy),
+		Percentage:         cfg.Bet.Percentage,
+		PercentageGap:      cfg.Bet.PercentageGap,
+		MaxPoints:          cfg.Bet.MaxPoints,
+		StealthMode:        cfg.Bet.StealthMode,
+		DeductStakeOnPlace: cfg.Bet.DeductStakeOnPlace,
+		DelayMode:          entities.DelayMode(cfg.Bet.DelayMode),
+		Delay:              cfg.Bet.Delay,
+		MinimumPoints:      cfg.Bet.MinimumPoints,
+		FilterCondition:    mergeFilterCondition(nil, cfg.Bet.FilterCondition),
 	}
 	betSettings.Default()
 

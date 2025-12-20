@@ -768,8 +768,24 @@ func (p *PubSubClient) placePrediction(eventID string) {
 		stopTracking("ERROR")
 		return
 	}
+
+	// ? The payout/refund is reflected later via PubSub points-earned events (and/or API refresh)
+	deductStake := true
+	if streamer.Settings.Bet.DeductStakeOnPlace != nil {
+		deductStake = *streamer.Settings.Bet.DeductStakeOnPlace
+	}
+	if deductStake && decision.Amount > 0 {
+		if p.onGain != nil {
+			p.onGain(streamer, -decision.Amount, "PREDICTION", 0)
+		} else {
+			streamer.ChannelPoints -= decision.Amount
+			if streamer.ChannelPoints < 0 {
+				streamer.ChannelPoints = 0
+			}
+		}
+	}
 	event.BetPlaced = true
-	// Ensure we log results even if Twitch doesn't emit prediction-made
+	// ? Ensure we log results even if Twitch doesn't emit prediction-made
 	event.BetConfirmed = true
 	outcome := event.DecisionOutcomeString()
 	if outcome == "" {
@@ -780,7 +796,6 @@ func (p *PubSubClient) placePrediction(eventID string) {
 	} else {
 		p.logger.EmojiPrintf(":four_leaf_clover:", "Place %s points on: %s for %s", formatNumber(decision.Amount), outcome, streamer.Username)
 	}
-	recordHistory(streamer, "PREDICTION", -decision.Amount)
 }
 
 func (p *PubSubClient) processCommunityPointChannel(topic string, payload map[string]interface{}) error {
@@ -907,27 +922,11 @@ func channelIDFromPayload(payload map[string]interface{}, topic string) string {
 	return ""
 }
 
-func recordHistory(streamer *entities.Streamer, reason string, amount int) {
-	if streamer == nil || reason == "" {
-		return
-	}
-	if streamer.History == nil {
-		streamer.History = make(map[string]*entities.HistoryEntry)
-	}
-	entry, ok := streamer.History[reason]
-	if !ok {
-		entry = &entities.HistoryEntry{}
-		streamer.History[reason] = entry
-	}
-	entry.Count++
-	entry.Amount += amount
-}
-
 func (p *PubSubClient) logPredictionResult(event *PredictionEvent, result map[string]interface{}) {
 	if event == nil || result == nil {
 		return
 	}
-	gained, placed, won, resultType, resultString := event.ParseResult(result)
+	gained, _, _, resultType, resultString := event.ParseResult(result)
 	event.BetConfirmed = true
 	decisionLabel := event.DecisionLabel()
 	if decisionLabel == "" {
@@ -965,16 +964,6 @@ func (p *PubSubClient) logPredictionResult(event *PredictionEvent, result map[st
 		resultString,
 		constants.ColorReset,
 	)
-	if streamer := event.Streamer; streamer != nil {
-		if gained != 0 {
-			recordHistory(streamer, "PREDICTION", gained)
-		}
-		if resultType == "REFUND" && placed > 0 {
-			recordHistory(streamer, "REFUND", -placed)
-		} else if resultType == "WIN" && won > 0 {
-			recordHistory(streamer, "PREDICTION", -won)
-		}
-	}
 }
 
 func (p *PubSubClient) resolvePredictionFromChannel(event *PredictionEvent, eventMap map[string]interface{}) {

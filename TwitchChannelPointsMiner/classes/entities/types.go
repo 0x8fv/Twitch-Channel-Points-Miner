@@ -73,15 +73,16 @@ type FilterCondition struct {
 }
 
 type BetSettings struct {
-	Strategy        Strategy         `json:"strategy,omitempty"`
-	Percentage      *int             `json:"percentage,omitempty"`
-	PercentageGap   *int             `json:"percentage_gap,omitempty"`
-	MaxPoints       *int             `json:"max_points,omitempty"`
-	MinimumPoints   *int             `json:"minimum_points,omitempty"`
-	StealthMode     *bool            `json:"stealth_mode,omitempty"`
-	FilterCondition *FilterCondition `json:"filter_condition,omitempty"`
-	Delay           *float64         `json:"delay,omitempty"`
-	DelayMode       DelayMode        `json:"delay_mode,omitempty"`
+	Strategy           Strategy         `json:"strategy,omitempty"`
+	Percentage         *int             `json:"percentage,omitempty"`
+	PercentageGap      *int             `json:"percentage_gap,omitempty"`
+	MaxPoints          *int             `json:"max_points,omitempty"`
+	MinimumPoints      *int             `json:"minimum_points,omitempty"`
+	StealthMode        *bool            `json:"stealth_mode,omitempty"`
+	DeductStakeOnPlace *bool            `json:"deduct_stake_on_place,omitempty"`
+	FilterCondition    *FilterCondition `json:"filter_condition,omitempty"`
+	Delay              *float64         `json:"delay,omitempty"`
+	DelayMode          DelayMode        `json:"delay_mode,omitempty"`
 }
 
 type StreamerSettings struct {
@@ -180,6 +181,10 @@ func (b *BetSettings) Default() {
 	if b.StealthMode == nil {
 		v := false
 		b.StealthMode = &v
+	}
+	if b.DeductStakeOnPlace == nil {
+		v := true
+		b.DeductStakeOnPlace = &v
 	}
 	if b.DelayMode == "" {
 		b.DelayMode = DelayModeFromEnd
