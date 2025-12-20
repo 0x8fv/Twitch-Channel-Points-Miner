@@ -245,7 +245,7 @@ func (m *Miner) run(streamers []string, useFollowers bool, order entities.Follow
 		m.logger.EmojiPrintf(":white_check_mark:", "%d Streamer loaded! (%s)", len(streamerObjs), formatLoadDuration(time.Since(loadStartedAt)))
 	}
 
-	if m.ClaimDropsStartup {
+	if m.ClaimDropsStartup && m.StreamerSettings.ClaimDrops {
 		if drops, err := m.twitch.ClaimAllDropsFromInventory(); err != nil {
 			m.logger.Printf("startup drop claim failed: %v", err)
 		} else {
@@ -256,7 +256,9 @@ func (m *Miner) run(streamers []string, useFollowers bool, order entities.Follow
 	m.streamers = streamerObjs
 
 	// ? background loops
-	go m.dropClaimer(m.stop)
+	if m.StreamerSettings.ClaimDrops {
+		go m.dropClaimer(m.stop)
+	}
 	go m.contextRefresher(streamerObjs, m.stop)
 	go m.minuteWatcher(streamerObjs, m.stop)
 	go m.startPubSub(streamerObjs, m.stop)
