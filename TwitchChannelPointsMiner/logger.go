@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/constants"
 )
 
 type LoggerSettings struct {
@@ -24,11 +26,13 @@ type LoggerSettings struct {
 	Debug            bool `json:"debug"`
 	DebugDeep        bool `json:"debug_deep"`
 	AnonymizeLogs    bool `json:"anonymize_logs"`
+	Discord          DiscordSettings `json:"discord"`
 }
 
 type Logger struct {
 	base     *log.Logger
 	settings LoggerSettings
+	discord  *DiscordWebhook
 }
 
 type dualWriter struct {
@@ -76,6 +80,7 @@ func NewLogger(settings LoggerSettings, username string) *Logger {
 	return &Logger{
 		base:     log.New(output, "", 0),
 		settings: settings,
+		discord:  NewDiscordWebhook(settings.Discord),
 	}
 }
 
@@ -95,6 +100,10 @@ func sanitizeFilename(name string) string {
 }
 
 func (l *Logger) log(level, emoji, format string, args ...interface{}) {
+	l.logEvent(level, emoji, "", format, args...)
+}
+
+func (l *Logger) logEvent(level, emoji string, event constants.Event, format string, args ...interface{}) {
 	if level == "DEBUG" && !l.settings.Debug {
 		return
 	}
@@ -104,6 +113,10 @@ func (l *Logger) log(level, emoji, format string, args ...interface{}) {
 	message := fmt.Sprintf(format, args...)
 	if emoji != "" && l.settings.Emoji {
 		message = fmt.Sprintf("%s %s", emojize(emoji), message)
+	}
+	if event != "" && l.discord != nil {
+		clean := ansiRegexp.ReplaceAllString(message, "")
+		l.discord.Send(clean, event)
 	}
 	timestampFormat := "15:04 02/01/06"
 	if l.settings.ShowSeconds {
@@ -132,6 +145,18 @@ func (l *Logger) Fatalf(format string, args ...interface{}) {
 
 func (l *Logger) EmojiPrintf(emoji, format string, args ...interface{}) {
 	l.log("INFO", emoji, format, args...)
+}
+
+func (l *Logger) Eventf(event constants.Event, format string, args ...interface{}) {
+	l.logEvent("INFO", "", event, format, args...)
+}
+
+func (l *Logger) EmojiEventf(emoji string, event constants.Event, format string, args ...interface{}) {
+	l.logEvent("INFO", emoji, event, format, args...)
+}
+
+func (l *Logger) ErrorEventf(event constants.Event, format string, args ...interface{}) {
+	l.logEvent("ERROR", "", event, format, args...)
 }
 
 func (l *Logger) Debugf(format string, args ...interface{}) {

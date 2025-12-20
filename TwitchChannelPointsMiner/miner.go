@@ -298,7 +298,7 @@ func (m *Miner) logClaimedDrops(drops []classpkg.ClaimedDrop) {
 		}
 		progress := formatDropProgress(drop.CurrentValue, drop.RequiredValue)
 		percent := progressPercent(drop.CurrentValue, drop.RequiredValue)
-		m.logger.EmojiPrintf(":package:", "Claim %s (%s) %s (%d%%)", reward, campaign, progress, percent)
+		m.logger.EmojiEventf(":package:", constants.EventDropClaim, "Claim %s (%s) %s (%d%%)", reward, campaign, progress, percent)
 	}
 }
 
@@ -954,13 +954,13 @@ func (m *Miner) logOnline(streamer *entities.Streamer) {
 	if suffix := m.gameSuffix(streamer); suffix != "" {
 		gameSuffix = fmt.Sprintf(" | %s %s", fmt.Sprintf("%sPlaying:%s", colorGameLabel, colorReset), suffix)
 	}
-	m.logger.EmojiPrintf(":partying_face:", "%s (%s%s%s points) is %sOnline%s!%s", name, colorCyan, points, colorReset, colorGreen, colorReset, gameSuffix)
+	m.logger.EmojiEventf(":partying_face:", constants.EventStreamerOnline, "%s (%s%s%s points) is %sOnline%s!%s", name, colorCyan, points, colorReset, colorGreen, colorReset, gameSuffix)
 }
 
 func (m *Miner) logOffline(streamer *entities.Streamer) {
 	name := m.styledStreamerName(streamer)
 	points := m.formattedStreamerPoints(streamer)
-	m.logger.EmojiPrintf(":sleeping:", "%s (%s%s%s points) is %sOffline%s!", name, colorCyan, points, colorReset, colorRed, colorReset)
+	m.logger.EmojiEventf(":sleeping:", constants.EventStreamerOffline, "%s (%s%s%s points) is %sOffline%s!", name, colorCyan, points, colorReset, colorRed, colorReset)
 }
 
 func (m *Miner) handleGameChange(streamer *entities.Streamer, previous, current string) {
@@ -1121,19 +1121,37 @@ func (m *Miner) logPointsDelta(streamer *entities.Streamer, delta int, reason st
 			reasonDisplay = fmt.Sprintf("%s %s", reason, ctx)
 		}
 	}
-	m.logger.EmojiPrintf(
-		":rocket:",
-		"%s%s%d%s → %s (%s%s%s points) - Reason: %s",
-		valueColor,
-		sign,
-		delta,
-		colorReset,
-		name,
-		colorCyan,
-		points,
-		colorReset,
-		reasonDisplay,
-	)
+	event := constants.EventFromGainReason(reason)
+	if event != "" {
+		m.logger.EmojiEventf(
+			":rocket:",
+			event,
+			"%s%s%d%s → %s (%s%s%s points) - Reason: %s",
+			valueColor,
+			sign,
+			delta,
+			colorReset,
+			name,
+			colorCyan,
+			points,
+			colorReset,
+			reasonDisplay,
+		)
+	} else {
+		m.logger.EmojiPrintf(
+			":rocket:",
+			"%s%s%d%s → %s (%s%s%s points) - Reason: %s",
+			valueColor,
+			sign,
+			delta,
+			colorReset,
+			name,
+			colorCyan,
+			points,
+			colorReset,
+			reasonDisplay,
+		)
+	}
 }
 
 func (m *Miner) handlePubSubGain(streamer *entities.Streamer, earned int, reason string, balance int) {

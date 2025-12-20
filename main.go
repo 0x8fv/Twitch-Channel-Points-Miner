@@ -51,6 +51,11 @@ type privacyConfig struct {
 	AnonymizeLogs bool `json:"anonymize_logs"`
 }
 
+type discordConfig struct {
+	WebhookAPI string   `json:"webhook_api"`
+	Events     []string `json:"events"`
+}
+
 type config struct {
 	Username                   string `json:"username"`
 	Password                   string `json:"password"`
@@ -80,6 +85,7 @@ type config struct {
 	Bet           betConfig     `json:"bet"`
 	Timezone      *string       `json:"timezone"`
 	Privacy       privacyConfig `json:"privacy"`
+	Discord       discordConfig `json:"discord"`
 
 	StreamerOverrides map[string]streamerSettingsConfig `json:"streamer_overrides"`
 }
@@ -235,6 +241,10 @@ func defaultConfig() map[string]interface{} {
 		"privacy": map[string]interface{}{
 			"anonymize_logs": false,
 		},
+		"discord": map[string]interface{}{
+			"webhook_api": "",
+			"events":      []interface{}{},
+		},
 		// "show_drops_indicator":          true,
 		"streamers":     []interface{}{},
 		"game_priority": []interface{}{},
@@ -291,6 +301,21 @@ func loadOrCreateConfig(path string) (config, error) {
 		for k, v := range defaultPrivacy {
 			if _, ok := privacyRaw[k]; !ok {
 				privacyRaw[k] = v
+				changed = true
+			}
+		}
+	}
+
+	discordRaw, ok := cfgMap["discord"].(map[string]interface{})
+	if !ok {
+		discordRaw = defaultConfig()["discord"].(map[string]interface{})
+		cfgMap["discord"] = discordRaw
+		changed = true
+	} else {
+		defaultDiscord := defaultConfig()["discord"].(map[string]interface{})
+		for k, v := range defaultDiscord {
+			if _, ok := discordRaw[k]; !ok {
+				discordRaw[k] = v
 				changed = true
 			}
 		}
@@ -435,6 +460,10 @@ func main() {
 		Debug:            cfg.Debug,
 		DebugDeep:        cfg.DebugDeep,
 		AnonymizeLogs:    cfg.Privacy.AnonymizeLogs,
+		Discord: miner.DiscordSettings{
+			WebhookAPI: cfg.Discord.WebhookAPI,
+			Events:     cfg.Discord.Events,
+		},
 	}
 
 	logger := miner.NewLogger(loggerSettings, cfg.Username)

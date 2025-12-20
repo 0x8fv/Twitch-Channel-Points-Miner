@@ -21,6 +21,9 @@ type Logger interface {
 	Printf(format string, args ...interface{})
 	Errorf(format string, args ...interface{})
 	EmojiPrintf(emoji, format string, args ...interface{})
+	Eventf(event constants.Event, format string, args ...interface{})
+	EmojiEventf(emoji string, event constants.Event, format string, args ...interface{})
+	ErrorEventf(event constants.Event, format string, args ...interface{})
 	Debugf(format string, args ...interface{})
 	DebugEnabled() bool
 }
@@ -494,7 +497,7 @@ func (p *PubSubClient) processRaidMessage(topic string, payload map[string]inter
 	if target == "" {
 		target = "raid target"
 	}
-	p.logger.EmojiPrintf(":performing_arts:", "Joining raid from %s to %s", p.streamerName(streamer), p.name(target))
+	p.logger.EmojiEventf(":performing_arts:", constants.EventJoinRaid, "Joining raid from %s to %s", p.streamerName(streamer), p.name(target))
 	return nil
 }
 
@@ -516,7 +519,7 @@ func (p *PubSubClient) processMomentMessage(topic string, payload map[string]int
 		p.logger.Errorf("claim moment %s: %v", p.streamerName(streamer), err)
 		return nil
 	}
-	p.logger.EmojiPrintf(":video_camera:", "%s Claimed Moment", p.streamerName(streamer))
+	p.logger.EmojiEventf(":video_camera:", constants.EventMomentClaim, "%s Claimed Moment", p.streamerName(streamer))
 	return nil
 }
 
@@ -637,7 +640,7 @@ func (p *PubSubClient) processPredictionChannel(topic string, payload map[string
 		time.AfterFunc(wait, func() {
 			p.placePrediction(event.EventID)
 		})
-		p.logger.EmojiPrintf(":alarm_clock:", "Place bet after %s for %s", wait.Truncate(time.Second), p.streamerName(streamer))
+		p.logger.EmojiEventf(":alarm_clock:", constants.EventBetStart, "Place bet after %s for %s", wait.Truncate(time.Second), p.streamerName(streamer))
 	case "event-updated":
 		var existing *PredictionEvent
 		p.predMu.Lock()
@@ -710,22 +713,22 @@ func (p *PubSubClient) placePrediction(eventID string) {
 	}
 	streamer := event.Streamer
 	if event.Status != "ACTIVE" {
-		p.logger.Printf("Skip bet for %s: event status is %s", p.streamerName(streamer), event.Status)
+		p.logger.Eventf(constants.EventBetGeneral, "Skip bet for %s: event status is %s", p.streamerName(streamer), event.Status)
 		stopTracking("SKIPPED")
 		return
 	}
 	if streamer.Settings.Bet.MinimumPoints != nil && streamer.ChannelPoints <= *streamer.Settings.Bet.MinimumPoints {
 		if p.anonymizeLogs() {
-			p.logger.Printf("Skip bet for %s: balance below minimum_points", p.streamerName(streamer))
+			p.logger.Eventf(constants.EventBetFilters, "Skip bet for %s: balance below minimum_points", p.streamerName(streamer))
 		} else {
-			p.logger.Printf("Skip bet for %s: balance %d <= minimum_points %d", streamer.Username, streamer.ChannelPoints, *streamer.Settings.Bet.MinimumPoints)
+			p.logger.Eventf(constants.EventBetFilters, "Skip bet for %s: balance %d <= minimum_points %d", streamer.Username, streamer.ChannelPoints, *streamer.Settings.Bet.MinimumPoints)
 		}
 		stopTracking("SKIPPED")
 		return
 	}
 	decision := event.Decide(streamer.ChannelPoints)
 	if decision.OutcomeID == "" {
-		p.logger.Printf("Skip bet for %s: no outcome selected", p.streamerName(streamer))
+		p.logger.Eventf(constants.EventBetGeneral, "Skip bet for %s: no outcome selected", p.streamerName(streamer))
 		stopTracking("SKIPPED")
 		return
 	}
@@ -738,11 +741,11 @@ func (p *PubSubClient) placePrediction(eventID string) {
 			}
 		}
 		if p.anonymizeLogs() {
-			p.logger.Printf("Skip bet for %s: %s", p.streamerName(streamer), reason)
+			p.logger.Eventf(constants.EventBetFilters, "Skip bet for %s: %s", p.streamerName(streamer), reason)
 			stopTracking("SKIPPED")
 			return
 		}
-		p.logger.Printf("Skip bet for %s: %s", streamer.Username, reason)
+		p.logger.Eventf(constants.EventBetFilters, "Skip bet for %s: %s", streamer.Username, reason)
 		stopTracking("SKIPPED")
 		return
 	}
@@ -756,15 +759,15 @@ func (p *PubSubClient) placePrediction(eventID string) {
 			}
 		}
 		if p.anonymizeLogs() {
-			p.logger.Printf("Skip bet for %s: below Twitch minimum", p.streamerName(streamer))
+			p.logger.Eventf(constants.EventBetFilters, "Skip bet for %s: below Twitch minimum", p.streamerName(streamer))
 		} else {
-			p.logger.Printf("Skip bet for %s: %s", streamer.Username, reason)
+			p.logger.Eventf(constants.EventBetFilters, "Skip bet for %s: %s", streamer.Username, reason)
 		}
 		stopTracking("SKIPPED")
 		return
 	}
 	if err := p.twitch.MakePrediction(event); err != nil {
-		p.logger.Errorf("prediction %s: %v", p.streamerName(streamer), err)
+		p.logger.ErrorEventf(constants.EventBetFailed, "prediction %s: %v", p.streamerName(streamer), err)
 		stopTracking("ERROR")
 		return
 	}
@@ -792,9 +795,9 @@ func (p *PubSubClient) placePrediction(eventID string) {
 		outcome = decision.OutcomeID
 	}
 	if p.anonymizeLogs() {
-		p.logger.EmojiPrintf(":four_leaf_clover:", "Place bet on: %s for %s", outcome, p.streamerName(streamer))
+		p.logger.EmojiEventf(":four_leaf_clover:", constants.EventBetGeneral, "Place bet on: %s for %s", outcome, p.streamerName(streamer))
 	} else {
-		p.logger.EmojiPrintf(":four_leaf_clover:", "Place %s points on: %s for %s", formatNumber(decision.Amount), outcome, streamer.Username)
+		p.logger.EmojiEventf(":four_leaf_clover:", constants.EventBetGeneral, "Place %s points on: %s for %s", formatNumber(decision.Amount), outcome, streamer.Username)
 	}
 }
 
@@ -955,15 +958,29 @@ func (p *PubSubClient) logPredictionResult(event *PredictionEvent, result map[st
 		}
 		resultString = resultType
 	}
-	p.logger.EmojiPrintf(
-		":bar_chart:",
-		"%s - Decision: %s - Result: %s%s%s",
-		label,
-		decisionLabel,
-		color,
-		resultString,
-		constants.ColorReset,
-	)
+	resultEvent := constants.EventFromBetResult(resultType)
+	if resultEvent != "" {
+		p.logger.EmojiEventf(
+			":bar_chart:",
+			resultEvent,
+			"%s - Decision: %s - Result: %s%s%s",
+			label,
+			decisionLabel,
+			color,
+			resultString,
+			constants.ColorReset,
+		)
+	} else {
+		p.logger.EmojiPrintf(
+			":bar_chart:",
+			"%s - Decision: %s - Result: %s%s%s",
+			label,
+			decisionLabel,
+			color,
+			resultString,
+			constants.ColorReset,
+		)
+	}
 }
 
 func (p *PubSubClient) resolvePredictionFromChannel(event *PredictionEvent, eventMap map[string]interface{}) {

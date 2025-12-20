@@ -17,6 +17,7 @@ type ChatLogger interface {
 	Printf(format string, args ...interface{})
 	Errorf(format string, args ...interface{})
 	EmojiPrintf(emoji, format string, args ...interface{})
+	EmojiEventf(emoji string, event constants.Event, format string, args ...interface{})
 }
 
 type ChatClient struct {
@@ -174,13 +175,13 @@ func (c *ChatClient) handleLine(line string) {
 			if channel != "" {
 				channel = c.anonymizer.Name(channel)
 			}
-			c.logger.EmojiPrintf(":speech_balloon:", "Chat mention in %s", channel)
+			c.logger.EmojiEventf(":speech_balloon:", constants.EventChatMention, "Chat mention in %s", channel)
 		} else {
 			displayNick := nick
 			if displayNick == "" {
 				displayNick = "unknown"
 			}
-			c.logger.EmojiPrintf(":speech_balloon:", "%s at #%s wrote: %s", displayNick, c.channel, msg)
+			c.logger.EmojiEventf(":speech_balloon:", constants.EventChatMention, "%s at #%s wrote: %s", displayNick, c.channel, msg)
 		}
 	}
 }

@@ -1,6 +1,10 @@
 package classes
 
-import "testing"
+import (
+	"testing"
+
+	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/constants"
+)
 
 type stubChatLogger struct {
 	calls []string
@@ -15,6 +19,10 @@ func (s *stubChatLogger) Errorf(format string, args ...interface{}) {
 }
 
 func (s *stubChatLogger) EmojiPrintf(emoji, format string, args ...interface{}) {
+	s.calls = append(s.calls, "emoji:"+emoji)
+}
+
+func (s *stubChatLogger) EmojiEventf(emoji string, _ constants.Event, format string, args ...interface{}) {
 	s.calls = append(s.calls, "emoji:"+emoji)
 }
 

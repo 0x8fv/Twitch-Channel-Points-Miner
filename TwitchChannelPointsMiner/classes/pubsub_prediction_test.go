@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/classes/entities"
+	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/constants"
 )
 
 type stubPubSubLogger struct {
@@ -23,6 +24,18 @@ func (s *stubPubSubLogger) Errorf(string, ...interface{}) {
 
 func (s *stubPubSubLogger) EmojiPrintf(string, string, ...interface{}) {
 	s.emojiCalls++
+}
+
+func (s *stubPubSubLogger) Eventf(constants.Event, string, ...interface{}) {
+	s.printfCalls++
+}
+
+func (s *stubPubSubLogger) EmojiEventf(string, constants.Event, string, ...interface{}) {
+	s.emojiCalls++
+}
+
+func (s *stubPubSubLogger) ErrorEventf(constants.Event, string, ...interface{}) {
+	s.errorCalls++
 }
 
 func (s *stubPubSubLogger) Debugf(string, ...interface{}) {
@@ -103,4 +116,3 @@ func TestPlacePredictionStopsTrackingOnFilterSkip(t *testing.T) {
 		t.Fatalf("expected ResultType SKIPPED, got %q", event.ResultType)
 	}
 }
-
