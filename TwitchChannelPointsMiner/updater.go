@@ -106,13 +106,21 @@ func fetchLatestRelease(disableSSL bool) (githubRelease, error) {
 }
 
 func pickAsset(assets []releaseAsset, goos, arch string) (releaseAsset, error) {
-	expected := fmt.Sprintf("TwitchChannelPointsMiner-%s-%s", goos, arch)
+	expected := []string{fmt.Sprintf("TwitchChannelPointsMiner-%s-%s", goos, arch)}
 	if goos == "windows" {
-		expected += ".exe"
+		expected[0] += ".exe"
+	}
+	if goos == "darwin" {
+		expected = append(expected,
+			fmt.Sprintf("TwitchChannelPointsMiner-macos-%s", arch),
+			fmt.Sprintf("TwitchChannelPointsMiner-osx-%s", arch),
+		)
 	}
 	for _, asset := range assets {
-		if strings.EqualFold(asset.Name, expected) {
-			return asset, nil
+		for _, name := range expected {
+			if strings.EqualFold(asset.Name, name) {
+				return asset, nil
+			}
 		}
 	}
 	return releaseAsset{}, fmt.Errorf("no release asset for %s/%s", goos, arch)

@@ -1,4 +1,4 @@
-# Builds Windows and Linux binaries with size optimizations into ./dist.
+# Builds Windows, Linux, and macOS binaries with size optimizations into ./dist.
 $ErrorActionPreference = "Stop"
 
 $repoRoot = $PSScriptRoot
@@ -9,7 +9,9 @@ New-Item -ItemType Directory -Force -Path $dist | Out-Null
 
 $targets = @(
     @{ OS = "windows"; Arch = "amd64"; Ext = ".exe" },
-    @{ OS = "linux";   Arch = "amd64"; Ext = "" }
+    @{ OS = "linux";   Arch = "amd64"; Ext = "" },
+    @{ OS = "darwin";  Arch = "amd64"; Ext = "" },
+    @{ OS = "darwin";  Arch = "arm64"; Ext = "" }
 )
 
 $originalEnv = @{
