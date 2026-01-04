@@ -5,6 +5,8 @@ import "strings"
 type Event string
 
 const (
+	EventStartup         Event = "STARTUP"
+	EventShutdown        Event = "SHUTDOWN"
 	EventStreamerOnline   Event = "STREAMER_ONLINE"
 	EventStreamerOffline  Event = "STREAMER_OFFLINE"
 	EventGainForRaid      Event = "GAIN_FOR_RAID"

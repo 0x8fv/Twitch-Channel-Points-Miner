@@ -180,7 +180,7 @@ func (m *Miner) run(streamers []string, useFollowers bool, order entities.Follow
 	m.logger.Printf("Twitch Channel Points Miner | v%s", constants.Version)
 	m.logger.Println("https://github.com/0x8fv/Twitch-Channel-Points-Miner")
 	sessionID := newSessionID()
-	m.logger.EmojiPrintf(":green_circle:", "Start session: '%s'", sessionID)
+	m.logger.EmojiEventf(":green_circle:", constants.EventStartup, "Start session: '%s'", sessionID)
 	m.stop = make(chan struct{})
 	m.initialPoints = make(map[string]int)
 
@@ -885,7 +885,7 @@ func (m *Miner) shutdown(sessionID string) {
 	fmt.Println()
 	fmt.Println()
 	fmt.Println()
-	m.logger.EmojiPrintf(":stop_sign:", "Ending session: '%s'", sessionID)
+	m.logger.EmojiEventf(":stop_sign:", constants.EventShutdown, "Ending session: '%s'", sessionID)
 	duration := formatDuration(time.Since(m.startedAt))
 	m.logger.EmojiPrintf(":hourglass:", "Duration %s", duration)
 	totalPointsChange := 0
