@@ -29,7 +29,7 @@ func TestNewLoggerCreatesFileWhenSaveEnabled(t *testing.T) {
 	}
 	defer os.Chdir(wd)
 
-	logger := NewLogger(LoggerSettings{Save: true}, "tester")
+	logger := NewLogger(LoggerSettings{Save: true}, "tester", false)
 	logger.Printf("hello")
 
 	logPath := filepath.Join("log", "tester.log")

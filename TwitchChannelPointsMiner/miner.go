@@ -152,7 +152,7 @@ func NewMiner(username, password string, claimDropsStartup bool, disableCertChec
 		LoggerSettings:             loggerSettings,
 		StreamerSettings:           streamerSettings,
 		StreamerOverrides:          streamerOverrides,
-		logger:                     NewLogger(loggerSettings, username),
+		logger:                     NewLogger(loggerSettings, username, disableCertCheck),
 		watchPriorities:            parseWatchPriorities(priorityNames),
 		gamePriority:               priorityList,
 		gamePriorityIndex:          priorityIndex,
@@ -184,7 +184,7 @@ func (m *Miner) run(streamers []string, useFollowers bool, order entities.Follow
 	m.stop = make(chan struct{})
 	m.initialPoints = make(map[string]int)
 
-	tw, err := classpkg.NewTwitch(m.Username, utils.GetUserAgent("CHROME"), m.Password, m.logger, m.anonymizer)
+	tw, err := classpkg.NewTwitch(m.Username, utils.GetUserAgent("CHROME"), m.Password, m.logger, m.anonymizer, m.DisableSSLCertVerification)
 	if err != nil {
 		m.logger.Fatalf("failed to create twitch client: %v", err)
 	}
@@ -872,6 +872,7 @@ func (m *Miner) startPubSub(streamers []*entities.Streamer, stop <-chan struct{}
 		streamers,
 		m.handlePubSubGain,
 		m.handlePubSubPresence,
+		m.DisableSSLCertVerification,
 	)
 	client.Start(stop)
 }

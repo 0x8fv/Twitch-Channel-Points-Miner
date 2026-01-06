@@ -1,7 +1,9 @@
 package classes
 
 import (
+	"crypto/tls"
 	"encoding/json"
+
 	"errors"
 	"fmt"
 	"math"
@@ -40,6 +42,7 @@ type PubSubClient struct {
 	predMu      sync.Mutex
 	onGain      func(streamer *entities.Streamer, earned int, reason string, balance int)
 	onPresence  func(streamer *entities.Streamer, online bool, reason string)
+	disableSSL  bool
 }
 
 func (p *PubSubClient) anonymizeLogs() bool {
@@ -90,6 +93,7 @@ func NewPubSubClient(
 	streamers []*entities.Streamer,
 	onGain func(*entities.Streamer, int, string, int),
 	onPresence func(*entities.Streamer, bool, string),
+	disableCertCheck bool,
 ) *PubSubClient {
 	streamerMap := make(map[string]*entities.Streamer)
 	for _, s := range streamers {
@@ -106,6 +110,7 @@ func NewPubSubClient(
 		predictions: make(map[string]*PredictionEvent),
 		onGain:      onGain,
 		onPresence:  onPresence,
+		disableSSL:  disableCertCheck,
 	}
 }
 
@@ -145,6 +150,9 @@ func (p *PubSubClient) run(connIndex int, topics []string, stop <-chan struct{})
 
 func (p *PubSubClient) connectAndListen(connIndex int, topics []string, stop <-chan struct{}) error {
 	dialer := websocket.DefaultDialer
+	if p.disableSSL {
+		dialer.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
 	conn, _, err := dialer.Dial(constants.WebsocketURL, nil)
 	if err != nil {
 		return err

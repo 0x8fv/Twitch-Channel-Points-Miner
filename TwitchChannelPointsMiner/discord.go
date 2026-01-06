@@ -1,7 +1,9 @@
 package twitchchannelpointsminer
 
 import (
+	"crypto/tls"
 	"net/http"
+
 	"net/url"
 	"strings"
 	"time"
@@ -23,9 +25,10 @@ type DiscordWebhook struct {
 	webhookAPI string
 	events     map[constants.Event]struct{}
 	client     *http.Client
+	disableSSL bool
 }
 
-func NewDiscordWebhook(settings DiscordSettings) *DiscordWebhook {
+func NewDiscordWebhook(settings DiscordSettings, disableCertCheck bool) *DiscordWebhook {
 	webhookAPI := strings.TrimSpace(settings.WebhookAPI)
 	if webhookAPI == "" {
 		return nil
@@ -38,10 +41,20 @@ func NewDiscordWebhook(settings DiscordSettings) *DiscordWebhook {
 		}
 		events[event] = struct{}{}
 	}
+
+	transport := &http.Transport{}
+	if disableCertCheck {
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
+
 	return &DiscordWebhook{
 		webhookAPI: webhookAPI,
 		events:     events,
-		client:     &http.Client{Timeout: 5 * time.Second},
+		client: &http.Client{
+			Timeout:   5 * time.Second,
+			Transport: transport,
+		},
+		disableSSL: disableCertCheck,
 	}
 }
 
