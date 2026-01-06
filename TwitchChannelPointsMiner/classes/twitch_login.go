@@ -2,7 +2,9 @@ package classes
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
+
 	"errors"
 	"fmt"
 	"io"
@@ -27,9 +29,10 @@ type TwitchLogin struct {
 	Password  string
 	UserAgent string
 
-	client *http.Client
-	userID string
-	mu     sync.Mutex
+	client     *http.Client
+	userID     string
+	disableSSL bool
+	mu         sync.Mutex
 }
 
 type persistedCookie struct {
@@ -40,16 +43,25 @@ type persistedCookie struct {
 
 type cookieStore map[string]persistedCookie
 
-func NewTwitchLogin(clientID, deviceID, username, userAgent, password string) (*TwitchLogin, error) {
+func NewTwitchLogin(clientID, deviceID, username, userAgent, password string, disableCertCheck bool) (*TwitchLogin, error) {
 	jar, _ := cookiejar.New(nil)
-	client := &http.Client{Jar: jar, Timeout: 30 * time.Second}
+	transport := &http.Transport{}
+	if disableCertCheck {
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
+	client := &http.Client{
+		Jar:       jar,
+		Timeout:   30 * time.Second,
+		Transport: transport,
+	}
 	return &TwitchLogin{
-		ClientID:  clientID,
-		DeviceID:  deviceID,
-		Username:  username,
-		Password:  password,
-		UserAgent: userAgent,
-		client:    client,
+		ClientID:   clientID,
+		DeviceID:   deviceID,
+		Username:   username,
+		Password:   password,
+		UserAgent:  userAgent,
+		client:     client,
+		disableSSL: disableCertCheck,
 	}, nil
 }
 

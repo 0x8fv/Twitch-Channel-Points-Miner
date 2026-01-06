@@ -54,6 +54,7 @@ type Twitch struct {
 	spadeRegex     *regexp.Regexp
 	logger         debugLogger
 	anonymizer     *privacy.Anonymizer
+	disableSSL     bool
 	onGameChange   func(streamer *entities.Streamer, previous, current string)
 }
 
@@ -64,9 +65,9 @@ type ClaimedDrop struct {
 	RequiredValue int
 }
 
-func NewTwitch(username, userAgent, password string, logger debugLogger, anonymizer *privacy.Anonymizer) (*Twitch, error) {
+func NewTwitch(username, userAgent, password string, logger debugLogger, anonymizer *privacy.Anonymizer, disableCertCheck bool) (*Twitch, error) {
 	deviceID := randomString(32)
-	login, err := NewTwitchLogin(constants.ClientID, deviceID, username, userAgent, password)
+	login, err := NewTwitchLogin(constants.ClientID, deviceID, username, userAgent, password, disableCertCheck)
 	if err != nil {
 		return nil, err
 	}
@@ -84,6 +85,7 @@ func NewTwitch(username, userAgent, password string, logger debugLogger, anonymi
 		spadeRegex:     regexp.MustCompile(`"spade_url":"(.*?)"`),
 		logger:         logger,
 		anonymizer:     anonymizer,
+		disableSSL:     disableCertCheck,
 	}, nil
 }
 

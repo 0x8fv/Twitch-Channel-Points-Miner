@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, fix/** ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Build
+      run: go build -v -o twitch-miner main.go
+
+    - name: Test
+      run: go test -v ./...
+
+    - name: Upload Binary
+      uses: actions/upload-artifact@v3
+      with:
+        name: twitch-miner-linux
+        path: twitch-miner

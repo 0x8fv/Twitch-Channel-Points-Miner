@@ -466,7 +466,7 @@ func main() {
 		},
 	}
 
-	logger := miner.NewLogger(loggerSettings, cfg.Username)
+	logger := miner.NewLogger(loggerSettings, cfg.Username, cfg.DisableSSLCertVerification)
 	applyTimezoneOverride(cfg.Timezone, logger)
 
 	minr := miner.NewMiner(

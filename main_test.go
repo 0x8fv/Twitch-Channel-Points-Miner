@@ -49,7 +49,7 @@ func TestApplyTimezoneOverride(t *testing.T) {
 	defer func() { time.Local = original }()
 
 	zone := "UTC"
-	logger := miner.NewLogger(miner.LoggerSettings{}, "")
+	logger := miner.NewLogger(miner.LoggerSettings{}, "", false)
 	applyTimezoneOverride(&zone, logger)
 	if time.Local.String() != "UTC" {
 		t.Fatalf("expected time.Local set to UTC, got %s", time.Local.String())

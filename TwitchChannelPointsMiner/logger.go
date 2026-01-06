@@ -57,7 +57,7 @@ func (w dualWriter) Write(p []byte) (int, error) {
 
 var ansiRegexp = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
-func NewLogger(settings LoggerSettings, username string) *Logger {
+func NewLogger(settings LoggerSettings, username string, disableSSL bool) *Logger {
 	var output io.Writer = os.Stdout
 	if settings.Save {
 		logDir := "log"
@@ -80,7 +80,7 @@ func NewLogger(settings LoggerSettings, username string) *Logger {
 	return &Logger{
 		base:     log.New(output, "", 0),
 		settings: settings,
-		discord:  NewDiscordWebhook(settings.Discord),
+		discord:  NewDiscordWebhook(settings.Discord, disableSSL),
 	}
 }
 
