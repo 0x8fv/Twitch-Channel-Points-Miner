@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Build Multi-platform
+      run: |
+        GOOS=linux GOARCH=amd64 go build -o TwitchChannelPointsMiner-linux-amd64 main.go
+        GOOS=windows GOARCH=amd64 go build -o TwitchChannelPointsMiner-windows-amd64.exe main.go
+        GOOS=darwin GOARCH=amd64 go build -o TwitchChannelPointsMiner-darwin-amd64 main.go
+        GOOS=darwin GOARCH=arm64 go build -o TwitchChannelPointsMiner-darwin-arm64 main.go
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          TwitchChannelPointsMiner-linux-amd64
+          TwitchChannelPointsMiner-windows-amd64.exe
+          TwitchChannelPointsMiner-darwin-amd64
+          TwitchChannelPointsMiner-darwin-arm64
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
