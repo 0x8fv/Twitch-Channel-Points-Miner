@@ -683,7 +683,16 @@ func (m *Miner) pickStreamersToWatch(streamers []*entities.Streamer) []*entities
 			}
 			pick(drops, true, nil, "DROPS")
 		case watchPrioritySubscribed:
-			subscribed := append([]candidate(nil), candidates...)
+			subscribed := make([]candidate, 0, len(candidates))
+			for _, c := range candidates {
+				s := streamers[c.idx]
+				if s == nil {
+					continue
+				}
+				if s.HasActiveMultipliers() {
+					subscribed = append(subscribed, c)
+				}
+			}
 			pick(subscribed, true, func(a, b candidate) bool {
 				return streamers[a.idx].TotalMultiplier() > streamers[b.idx].TotalMultiplier()
 			}, "SUBSCRIBED")

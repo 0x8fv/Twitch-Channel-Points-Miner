@@ -227,3 +227,25 @@ func TestSleepWithStop(t *testing.T) {
 		t.Fatalf("sleep returned too early: %s", elapsed)
 	}
 }
+
+func TestPickStreamersToWatchSkipsSubscribedPriorityWhenNone(t *testing.T) {
+	onlineAt := time.Now().Add(-time.Minute)
+	streamers := []*entities.Streamer{
+		{Username: "streamer1", IsOnline: true, OnlineAt: onlineAt, ChannelPoints: 1000},
+		{Username: "streamer8", IsOnline: true, OnlineAt: onlineAt, ChannelPoints: 900},
+		{Username: "streamer9", IsOnline: true, OnlineAt: onlineAt, ChannelPoints: 10},
+		{Username: "streamer10", IsOnline: true, OnlineAt: onlineAt, ChannelPoints: 20},
+	}
+
+	m := &Miner{
+		watchPriorities: parseWatchPriorities([]string{"STREAK", "SUBSCRIBED", "POINTS_ASC"}),
+	}
+
+	got := m.pickStreamersToWatch(streamers)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 watchers got %d", len(got))
+	}
+	if got[0] != streamers[2] || got[1] != streamers[3] {
+		t.Fatalf("expected lowest points prioritized, got %s then %s", got[0].Username, got[1].Username)
+	}
+}
