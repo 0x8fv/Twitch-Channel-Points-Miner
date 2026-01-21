@@ -8,7 +8,7 @@ const (
 	ClientID      = "ue6666qo983tsx6so1t0vnawi233wa"
 	DropID        = "c2542d6d-cd10-4532-919b-3d19f30a768b"
 	ClientVersion = "ef928475-9403-42f2-8a34-55784bd08e16"
-	Version       = "1.0"
+	Version       = "1.1"
 
 	ColorGreen  = "\033[38;5;46m"
 	ColorRed    = "\033[38;5;196m"
