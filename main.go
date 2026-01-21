@@ -78,14 +78,15 @@ type config struct {
 	ShowGame                   bool   `json:"show_game"`
 	IRCMode                    string `json:"chat_presence"`
 	// ShowDropsIndicator         bool      `json:"show_drops_indicator"`
-	Streamers     []string      `json:"streamers"`
-	GamePriority  []string      `json:"game_priority"`
-	GameExclude   []string      `json:"game_exclude"`
-	WatchPriority []string      `json:"watch_priority"`
-	Bet           betConfig     `json:"bet"`
-	Timezone      *string       `json:"timezone"`
-	Privacy       privacyConfig `json:"privacy"`
-	Discord       discordConfig `json:"discord"`
+	Streamers        []string      `json:"streamers"`
+	StreamersExclude []string      `json:"streamers_exclude"`
+	GamePriority     []string      `json:"game_priority"`
+	GameExclude      []string      `json:"game_exclude"`
+	WatchPriority    []string      `json:"watch_priority"`
+	Bet              betConfig     `json:"bet"`
+	Timezone         *string       `json:"timezone"`
+	Privacy          privacyConfig `json:"privacy"`
+	Discord          discordConfig `json:"discord"`
 
 	StreamerOverrides map[string]streamerSettingsConfig `json:"streamer_overrides"`
 }
@@ -246,9 +247,10 @@ func defaultConfig() map[string]interface{} {
 			"events":      []interface{}{},
 		},
 		// "show_drops_indicator":          true,
-		"streamers":     []interface{}{},
-		"game_priority": []interface{}{},
-		"game_exclude":  []interface{}{},
+		"streamers":         []interface{}{},
+		"streamers_exclude": []interface{}{},
+		"game_priority":     []interface{}{},
+		"game_exclude":      []interface{}{},
 		"watch_priority": []interface{}{
 			"STREAK",
 			"DROPS",
@@ -478,6 +480,7 @@ func main() {
 		baseStreamerSettings,
 		overrideSettings,
 		cfg.WatchPriority,
+		cfg.StreamersExclude,
 		cfg.GamePriority,
 		cfg.GameExclude,
 		cfg.ShowGame,

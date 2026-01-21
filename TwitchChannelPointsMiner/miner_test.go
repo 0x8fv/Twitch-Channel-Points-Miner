@@ -249,3 +249,27 @@ func TestPickStreamersToWatchSkipsSubscribedPriorityWhenNone(t *testing.T) {
 		t.Fatalf("expected lowest points prioritized, got %s then %s", got[0].Username, got[1].Username)
 	}
 }
+
+func TestFilterExcludedTargets(t *testing.T) {
+	m := &Miner{
+		streamerExclusions: map[string]struct{}{
+			"foo": {},
+			"bar": {},
+		},
+	}
+
+	got, excluded := m.filterExcludedTargets([]string{"Foo", "baz", "  bar  ", "", "qux"})
+	want := []string{"baz", "qux"}
+
+	if excluded != 2 {
+		t.Fatalf("expected 2 excluded got %d", excluded)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("length mismatch got %v want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("idx %d got %q want %q", i, got[i], want[i])
+		}
+	}
+}

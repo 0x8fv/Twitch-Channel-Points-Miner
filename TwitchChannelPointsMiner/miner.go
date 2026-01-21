@@ -107,6 +107,23 @@ func normalizeGameList(values []string) []string {
 	return normalized
 }
 
+func normalizeStreamerList(values []string) []string {
+	normalized := make([]string, 0, len(values))
+	seen := make(map[string]struct{})
+	for _, raw := range values {
+		name := strings.ToLower(strings.TrimSpace(raw))
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		normalized = append(normalized, name)
+	}
+	return normalized
+}
+
 type Miner struct {
 	Username                   string
 	Password                   string
@@ -122,6 +139,7 @@ type Miner struct {
 	initialPoints              map[string]int
 	stop                       chan struct{}
 	watchPriorities            []watchPriority
+	streamerExclusions         map[string]struct{}
 	gamePriority               []string
 	gamePriorityIndex          map[string]int
 	gameExclusions             map[string]struct{}
@@ -133,12 +151,16 @@ type Miner struct {
 	// showDropsIndicator         bool
 }
 
-func NewMiner(username, password string, claimDropsStartup bool, disableCertCheck bool, loggerSettings LoggerSettings, streamerSettings entities.StreamerSettings, streamerOverrides map[string]entities.StreamerSettings, priorityNames []string, gamePriority []string, gameExclude []string, showGameInfo bool, logWatchQueue bool) *Miner {
+func NewMiner(username, password string, claimDropsStartup bool, disableCertCheck bool, loggerSettings LoggerSettings, streamerSettings entities.StreamerSettings, streamerOverrides map[string]entities.StreamerSettings, priorityNames []string, streamerExclude []string, gamePriority []string, gameExclude []string, showGameInfo bool, logWatchQueue bool) *Miner {
 	streamerSettings.Default()
 	priorityList := normalizeGameList(gamePriority)
 	excludedGames := make(map[string]struct{})
 	for _, name := range normalizeGameList(gameExclude) {
 		excludedGames[name] = struct{}{}
+	}
+	excludedStreamers := make(map[string]struct{})
+	for _, name := range normalizeStreamerList(streamerExclude) {
+		excludedStreamers[name] = struct{}{}
 	}
 	priorityIndex := make(map[string]int, len(priorityList))
 	for idx, name := range priorityList {
@@ -154,6 +176,7 @@ func NewMiner(username, password string, claimDropsStartup bool, disableCertChec
 		StreamerOverrides:          streamerOverrides,
 		logger:                     NewLogger(loggerSettings, username),
 		watchPriorities:            parseWatchPriorities(priorityNames),
+		streamerExclusions:         excludedStreamers,
 		gamePriority:               priorityList,
 		gamePriorityIndex:          priorityIndex,
 		gameExclusions:             excludedGames,
@@ -173,6 +196,26 @@ func (m *Miner) Mine(streamers []string) {
 // ? MineFollowers runs the miner using the follower list.
 func (m *Miner) MineFollowers(order entities.FollowersOrder) {
 	m.run(nil, true, order)
+}
+
+func (m *Miner) filterExcludedTargets(targets []string) ([]string, int) {
+	if len(targets) == 0 || len(m.streamerExclusions) == 0 {
+		return targets, 0
+	}
+	filtered := make([]string, 0, len(targets))
+	excluded := 0
+	for _, name := range targets {
+		key := strings.ToLower(strings.TrimSpace(name))
+		if key == "" {
+			continue
+		}
+		if _, ok := m.streamerExclusions[key]; ok {
+			excluded++
+			continue
+		}
+		filtered = append(filtered, name)
+	}
+	return filtered, excluded
 }
 
 func (m *Miner) run(streamers []string, useFollowers bool, order entities.FollowersOrder) {
@@ -206,6 +249,12 @@ func (m *Miner) run(streamers []string, useFollowers bool, order entities.Follow
 	} else {
 		targets = streamers
 	}
+
+	filteredTargets, excludedCount := m.filterExcludedTargets(targets)
+	if excludedCount > 0 {
+		m.logger.EmojiPrintf(":no_entry_sign:", "Excluded %d streamer(s) via streamers_exclude", excludedCount)
+	}
+	targets = filteredTargets
 
 	streamerObjs := make([]*entities.Streamer, 0, len(targets))
 	loadStartedAt := time.Now()

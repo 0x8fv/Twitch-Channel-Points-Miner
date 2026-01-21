@@ -38,6 +38,7 @@ Go rewrite of [0x8fv/Twitch-Channel-Points-Miner-v2](https://github.com/0x8fv/Tw
 - `claim_drops_startup`, `claim_drops`, `follow_raid`: Auto-claim drops at boot, continue claiming while running, and auto-follow raid targets.
 - `betting(make_predictions)`: Enable Twitch prediction betting.
 - `streamers`: List of channel logins to mine; if empty, followers are mined in descending follow order.
+- `streamers_exclude`: List of channel logins to skip (useful with an empty `streamers` list to mine all followed channels except specific ones); case-insensitive.
 - `streamer_overrides`: Per-streamer overrides keyed by login; inherit from the global flags above. Example:
   ```json
   "streamer1": {
