@@ -435,7 +435,7 @@ func main() {
 	}
 
 	if cfg.AutoUpdate {
-		updated, err := miner.RunAutoUpdate(cfg.DisableSSLCertVerification)
+		updated, err := miner.RunAutoUpdate()
 		if err != nil {
 			log.Printf("auto-update failed: %v", err)
 		}

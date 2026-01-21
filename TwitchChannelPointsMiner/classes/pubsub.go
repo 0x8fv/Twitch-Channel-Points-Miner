@@ -1,6 +1,7 @@
 package classes
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,6 +35,7 @@ type PubSubClient struct {
 	twitch      *Twitch
 	logger      Logger
 	anonymizer  *privacy.Anonymizer
+	disableSSL  bool
 	streamers   []*entities.Streamer
 	streamerMap map[string]*entities.Streamer
 	predictions map[string]*PredictionEvent
@@ -88,6 +90,7 @@ func NewPubSubClient(
 	logger Logger,
 	anonymizer *privacy.Anonymizer,
 	streamers []*entities.Streamer,
+	disableSSL bool,
 	onGain func(*entities.Streamer, int, string, int),
 	onPresence func(*entities.Streamer, bool, string),
 ) *PubSubClient {
@@ -101,6 +104,7 @@ func NewPubSubClient(
 		twitch:      twitch,
 		logger:      logger,
 		anonymizer:  anonymizer,
+		disableSSL:  disableSSL,
 		streamers:   streamers,
 		streamerMap: streamerMap,
 		predictions: make(map[string]*PredictionEvent),
@@ -110,6 +114,9 @@ func NewPubSubClient(
 }
 
 func (p *PubSubClient) Start(stop <-chan struct{}) {
+	if p.disableSSL {
+		p.logger.Printf("SSL certificate verification is disabled! Be aware!")
+	}
 	topics, err := p.buildTopics()
 	if err != nil {
 		p.logger.Errorf("PubSub topic error: %v", err)
@@ -144,7 +151,10 @@ func (p *PubSubClient) run(connIndex int, topics []string, stop <-chan struct{})
 }
 
 func (p *PubSubClient) connectAndListen(connIndex int, topics []string, stop <-chan struct{}) error {
-	dialer := websocket.DefaultDialer
+	dialer := *websocket.DefaultDialer
+	if p.disableSSL {
+		dialer.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec
+	}
 	conn, _, err := dialer.Dial(constants.WebsocketURL, nil)
 	if err != nil {
 		return err

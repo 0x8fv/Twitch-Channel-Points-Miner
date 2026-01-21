@@ -928,6 +928,7 @@ func (m *Miner) startPubSub(streamers []*entities.Streamer, stop <-chan struct{}
 		m.logger,
 		m.anonymizer,
 		streamers,
+		m.DisableSSLCertVerification,
 		m.handlePubSubGain,
 		m.handlePubSubPresence,
 	)

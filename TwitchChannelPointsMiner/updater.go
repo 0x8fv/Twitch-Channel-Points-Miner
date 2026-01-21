@@ -1,7 +1,6 @@
 package twitchchannelpointsminer
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -31,7 +30,7 @@ type githubRelease struct {
 	Assets  []releaseAsset `json:"assets"`
 }
 
-func RunAutoUpdate(disableSSL bool) (bool, error) {
+func RunAutoUpdate() (bool, error) {
 	exePath, err := os.Executable()
 	if err != nil {
 		return false, fmt.Errorf("locate executable: %w", err)
@@ -39,7 +38,7 @@ func RunAutoUpdate(disableSSL bool) (bool, error) {
 
 	devRun := isGoRunExecutable(exePath)
 
-	release, err := fetchLatestRelease(disableSSL)
+	release, err := fetchLatestRelease()
 	if err != nil {
 		return false, err
 	}
@@ -61,7 +60,7 @@ func RunAutoUpdate(disableSSL bool) (bool, error) {
 	}
 
 	log.Printf("auto-update: found newer version %s (asset %s)", release.TagName, asset.Name)
-	tempPath, err := downloadAsset(asset.BrowserDownloadURL, filepath.Dir(exePath), disableSSL)
+	tempPath, err := downloadAsset(asset.BrowserDownloadURL, filepath.Dir(exePath))
 	if err != nil {
 		return false, fmt.Errorf("download update: %w", err)
 	}
@@ -79,7 +78,7 @@ func RunAutoUpdate(disableSSL bool) (bool, error) {
 	return true, nil
 }
 
-func fetchLatestRelease(disableSSL bool) (githubRelease, error) {
+func fetchLatestRelease() (githubRelease, error) {
 	req, err := http.NewRequest(http.MethodGet, releasesURL, nil)
 	if err != nil {
 		return githubRelease{}, err
@@ -87,7 +86,7 @@ func fetchLatestRelease(disableSSL bool) (githubRelease, error) {
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "TwitchChannelPointsMiner-Updater")
 
-	client := newHTTPClient(disableSSL, 15*time.Second)
+	client := newHTTPClient(15 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return githubRelease{}, fmt.Errorf("fetch release: %w", err)
@@ -126,14 +125,14 @@ func pickAsset(assets []releaseAsset, goos, arch string) (releaseAsset, error) {
 	return releaseAsset{}, fmt.Errorf("no release asset for %s/%s", goos, arch)
 }
 
-func downloadAsset(url, dir string, disableSSL bool) (string, error) {
+func downloadAsset(url, dir string) (string, error) {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Set("User-Agent", "TwitchChannelPointsMiner-Updater")
 
-	client := newHTTPClient(disableSSL, 5*time.Minute)
+	client := newHTTPClient(5 * time.Minute)
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
@@ -279,15 +278,8 @@ func compareVersions(a, b string) int {
 	return 0
 }
 
-func newHTTPClient(disableSSL bool, timeout time.Duration) *http.Client {
-	transport := &http.Transport{}
-	if disableSSL {
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec
-	}
-	return &http.Client{
-		Transport: transport,
-		Timeout:   timeout,
-	}
+func newHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{Timeout: timeout}
 }
 
 func isGoRunExecutable(path string) bool {
