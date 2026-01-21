@@ -24,6 +24,8 @@ Go rewrite of [0x8fv/Twitch-Channel-Points-Miner-v2](https://github.com/0x8fv/Tw
 4) On first launch you will see a device code prompt. Open `https://www.twitch.tv/activate`, enter the code, and wait until the app confirms login. Cookies are saved to `cookies/<username>.json` for future runs.
 5) Press Ctrl+C to stop; a session summary is printed on exit.
 
+When running a prebuilt binary, the miner uses `./config.json` if it exists in the current directory; otherwise it uses the directory containing the executable (so `config.json`, `cookies/`, and `log/` live next to the binary by default). Override with `-config`, `-data-dir`, `TCPM_CONFIG`, or `TCPM_DATA_DIR`.
+
 ## Configuration (config.json)
 - `username`: Twitch login used for mining and for the cookie filename.
 - `password`: Optional; device login is used, so you can leave this as-is.
@@ -106,6 +108,7 @@ Go rewrite of [0x8fv/Twitch-Channel-Points-Miner-v2](https://github.com/0x8fv/Tw
 ## Notes
 - Tested with Go 1.21; dependencies are in `go.mod`.
 - Shortcut commands: `go fmt ./...` to format, `go test ./...` to run unit tests.
+- macOS: if Finder opens the downloaded binary in a text editor, run it from Terminal and make it executable first (e.g. `chmod +x TwitchChannelPointsMiner-darwin-arm64`).
 
 ## Disclaimer
 - This project comes with no guarantee or warranty. You are responsible for whatever happens from using this project. It is possible to get soft or hard banned by using this project if you are not careful. This is a personal project and is in no way affiliated with Twitch.
