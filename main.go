@@ -187,6 +187,7 @@ type config struct {
 	ShowClaimedBonusMsg        bool   `json:"show_claimed_bonus_msg"`
 	ShowGame                   bool   `json:"show_game"`
 	IRCMode                    string `json:"chat_presence"`
+	DisableAtInNickname        bool   `json:"disable_at_in_nickname"`
 	// ShowDropsIndicator         bool      `json:"show_drops_indicator"`
 	Streamers        []string      `json:"streamers"`
 	StreamersExclude []string      `json:"streamers_exclude"`
@@ -348,6 +349,7 @@ func defaultConfig() map[string]interface{} {
 		"show_claimed_bonus_msg":        true,
 		"show_game":                     true,
 		"chat_presence":                 "ONLINE",
+		"disable_at_in_nickname":        false,
 		"timezone":                      nil,
 		"privacy": map[string]interface{}{
 			"anonymize_logs": false,
@@ -623,6 +625,7 @@ func main() {
 		cfg.StreamersExclude,
 		cfg.GamePriority,
 		cfg.GameExclude,
+		cfg.DisableAtInNickname,
 		cfg.ShowGame,
 		cfg.WatchQueueLogging,
 		// cfg.ShowDropsIndicator,

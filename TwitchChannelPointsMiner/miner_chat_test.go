@@ -29,3 +29,29 @@ func TestShouldJoinChat(t *testing.T) {
 		}
 	}
 }
+
+func TestNewMinerDisableAtInNicknameSetting(t *testing.T) {
+	streamerSettings := entities.StreamerSettings{}
+	streamerSettings.Default()
+
+	minr := NewMiner(
+		"user",
+		"",
+		false,
+		false,
+		LoggerSettings{},
+		streamerSettings,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		true,
+		false,
+		false,
+	)
+
+	if !minr.disableAtInNickname {
+		t.Fatalf("expected disableAtInNickname to be enabled from constructor")
+	}
+}
