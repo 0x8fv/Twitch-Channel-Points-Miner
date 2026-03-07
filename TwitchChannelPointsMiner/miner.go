@@ -145,13 +145,14 @@ type Miner struct {
 	gameExclusions             map[string]struct{}
 	chatWatchers               map[string]*classpkg.ChatClient
 	chatMu                     sync.Mutex
+	disableAtInNickname        bool
 	showGameInfo               bool
 	logWatchQueue              bool
 	anonymizer                 *privacy.Anonymizer
 	// showDropsIndicator         bool
 }
 
-func NewMiner(username, password string, claimDropsStartup bool, disableCertCheck bool, loggerSettings LoggerSettings, streamerSettings entities.StreamerSettings, streamerOverrides map[string]entities.StreamerSettings, priorityNames []string, streamerExclude []string, gamePriority []string, gameExclude []string, showGameInfo bool, logWatchQueue bool) *Miner {
+func NewMiner(username, password string, claimDropsStartup bool, disableCertCheck bool, loggerSettings LoggerSettings, streamerSettings entities.StreamerSettings, streamerOverrides map[string]entities.StreamerSettings, priorityNames []string, streamerExclude []string, gamePriority []string, gameExclude []string, disableAtInNickname bool, showGameInfo bool, logWatchQueue bool) *Miner {
 	streamerSettings.Default()
 	priorityList := normalizeGameList(gamePriority)
 	excludedGames := make(map[string]struct{})
@@ -181,6 +182,7 @@ func NewMiner(username, password string, claimDropsStartup bool, disableCertChec
 		gamePriorityIndex:          priorityIndex,
 		gameExclusions:             excludedGames,
 		chatWatchers:               make(map[string]*classpkg.ChatClient),
+		disableAtInNickname:        disableAtInNickname,
 		showGameInfo:               showGameInfo,
 		logWatchQueue:              logWatchQueue,
 		anonymizer:                 privacy.New(loggerSettings.AnonymizeLogs),
@@ -1332,7 +1334,7 @@ func (m *Miner) startChatWatcher(streamer *entities.Streamer) {
 		m.chatMu.Unlock()
 		return
 	}
-	watcher := classpkg.NewChatClient(m.Username, token, streamer.Username, m.logger, false, m.anonymizer)
+	watcher := classpkg.NewChatClient(m.Username, token, streamer.Username, m.logger, m.disableAtInNickname, m.anonymizer)
 	m.chatWatchers[key] = watcher
 	m.chatMu.Unlock()
 	if m.logger != nil {

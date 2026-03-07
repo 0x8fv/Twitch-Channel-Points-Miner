@@ -39,6 +39,7 @@ When running a prebuilt binary, the miner uses `./config.json` if it exists in t
 - `timezone`: Optional IANA timezone name (e.g. `Europe/Berlin`) to override auto-detection for environments like Android/Termux; leave `null`/empty to auto-detect.
 - `claim_drops_startup`, `claim_drops`, `follow_raid`: Auto-claim drops at boot, continue claiming while running, and auto-follow raid targets.
 - `betting(make_predictions)`: Enable Twitch prediction betting.
+- `disable_at_in_nickname`: When `true`, `CHAT_MENTION` also triggers on plain username mentions in chat (without requiring `@username`), matching the Python miner behavior.
 - `streamers`: List of channel logins to mine; if empty, followers are mined in descending follow order.
 - `streamers_exclude`: List of channel logins to skip (useful with an empty `streamers` list to mine all followed channels except specific ones); case-insensitive.
 - `streamer_overrides`: Per-streamer overrides keyed by login; inherit from the global flags above. Example:

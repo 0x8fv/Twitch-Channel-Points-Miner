@@ -18,6 +18,7 @@ func TestDefaultConfigIncludesExpectedKeys(t *testing.T) {
 		"streamers",
 		"game_priority",
 		"chat_presence",
+		"disable_at_in_nickname",
 		"bet",
 		"watch_priority",
 	}
