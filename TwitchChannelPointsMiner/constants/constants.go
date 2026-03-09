@@ -113,7 +113,7 @@ var GQLOperations = struct {
 	MakePrediction:                 newPersistedOperation("MakePrediction", "b44682ecc88358817009f20e69d75081b1e58825bb40aa53d5dbadcc17c881d8", nil),
 	ViewerDropsDashboard:           newPersistedOperation("ViewerDropsDashboard", "5a4da2ab3d5b47c9f9ce864e727b2cb346af1e3ea8b897fe8f704a97ff017619", map[string]interface{}{"fetchRewardCampaigns": true}),
 	DropCampaignDetails:            newPersistedOperation("DropCampaignDetails", "f6396f5ffdde867a8f6f6da18286e4baf02e5b98d14689a69b5af320a4c7b7b8", nil),
-	DropsHighlightServiceAvailable: newPersistedOperation("DropsHighlightService_AvailableDrops", "9a62a09bce5b53e26e64a671e530bc599cb6aab1e5ba3cbd5d85966d3940716f", nil),
+	DropsHighlightServiceAvailable: newPersistedOperation("DropsHighlightService_AvailableDrops", "782dad0f032942260171d2d80a654f88bdd0c5a9dddc392e9bc92218a0f42d20", nil),
 	GetIDFromLogin: newPersistedOperation("GetIDFromLogin", "94e82a7b1e3c21e186daa73ee2afc4b8f23bade1fbbff6fe8ac133f50a2f58ca", map[string]interface{}{
 		"login": nil,
 	}),
