@@ -1950,7 +1950,7 @@ func (m *Miner) updateHistory(streamer *entities.Streamer, reason string, amount
 	}
 	if reason == "WATCH" {
 		streamer.Stream.WatchCount++
-		if streamer.Stream.WatchStreakMissing && streamer.Stream.WatchCount >= 2 {
+		if streamer.Stream.WatchStreakMissing && streamer.Stream.WatchCount >= 1 {
 			markActualStreakCompleted(streamer)
 		}
 		m.syncActiveStreakWatch(streamer, time.Now())
