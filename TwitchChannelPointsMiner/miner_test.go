@@ -273,3 +273,49 @@ func TestFilterExcludedTargets(t *testing.T) {
 		}
 	}
 }
+
+func TestShouldClaimDrops(t *testing.T) {
+	tests := []struct {
+		name      string
+		global    bool
+		streamers []*entities.Streamer
+		want      bool
+	}{
+		{
+			name:   "enabled globally",
+			global: true,
+			want:   true,
+		},
+		{
+			name:   "enabled by streamer override",
+			global: false,
+			streamers: []*entities.Streamer{
+				{Settings: entities.StreamerSettings{ClaimDrops: false}},
+				{Settings: entities.StreamerSettings{ClaimDrops: true}},
+			},
+			want: true,
+		},
+		{
+			name:   "disabled globally and per streamer",
+			global: false,
+			streamers: []*entities.Streamer{
+				{Settings: entities.StreamerSettings{ClaimDrops: false}},
+				nil,
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &Miner{
+				StreamerSettings: entities.StreamerSettings{
+					ClaimDrops: tt.global,
+				},
+			}
+			if got := m.shouldClaimDrops(tt.streamers); got != tt.want {
+				t.Fatalf("shouldClaimDrops() = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
