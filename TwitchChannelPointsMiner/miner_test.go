@@ -108,6 +108,12 @@ func TestShouldPrioritizeStreak(t *testing.T) {
 	if m.shouldPrioritizeStreak(streamer, now) {
 		t.Fatalf("recent offline should skip streak priority")
 	}
+
+	streamer.OfflineAt = time.Time{}
+	streamer.Stream.WatchStreakMissing = false
+	if m.shouldPrioritizeStreak(streamer, now) {
+		t.Fatalf("resolved streak should not keep streak priority")
+	}
 }
 
 func TestGamePreference(t *testing.T) {

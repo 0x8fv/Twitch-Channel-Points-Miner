@@ -41,3 +41,38 @@ func TestHandlePubSubGainSupportsPredictionStakeDeduction(t *testing.T) {
 		t.Fatalf("history count got %d want %d", entry.Count, 2)
 	}
 }
+
+func TestUpdateHistoryWatchFallbackClearsPendingStreakAfterTwoWatchEvents(t *testing.T) {
+	m := &Miner{}
+	streamer := &entities.Streamer{
+		Stream: entities.NewStream(),
+	}
+
+	m.updateHistory(streamer, "WATCH", 10)
+	if streamer.Stream.WatchCount != 1 {
+		t.Fatalf("watch count after first WATCH got %d want 1", streamer.Stream.WatchCount)
+	}
+	if !streamer.Stream.WatchStreakMissing {
+		t.Fatalf("first WATCH should keep streak pending")
+	}
+
+	m.updateHistory(streamer, "WATCH", 10)
+	if streamer.Stream.WatchCount != 2 {
+		t.Fatalf("watch count after second WATCH got %d want 2", streamer.Stream.WatchCount)
+	}
+	if streamer.Stream.WatchStreakMissing {
+		t.Fatalf("second WATCH should clear pending streak")
+	}
+}
+
+func TestUpdateHistoryWatchStreakStillClearsPendingStateImmediately(t *testing.T) {
+	m := &Miner{}
+	streamer := &entities.Streamer{
+		Stream: entities.NewStream(),
+	}
+
+	m.updateHistory(streamer, "WATCH_STREAK", 450)
+	if streamer.Stream.WatchStreakMissing {
+		t.Fatalf("WATCH_STREAK should clear pending state immediately")
+	}
+}

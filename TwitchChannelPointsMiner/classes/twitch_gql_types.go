@@ -42,6 +42,7 @@ type gqlStreamInfoOverlayResponse struct {
 		User *struct {
 			Stream *struct {
 				ID           string   `json:"id"`
+				CreatedAt    string   `json:"createdAt"`
 				ViewersCount int      `json:"viewersCount"`
 				Tags         []gqlTag `json:"tags"`
 			} `json:"stream"`
@@ -56,8 +57,24 @@ type gqlStreamInfoOverlayResponse struct {
 type gqlIsStreamLiveResponse struct {
 	Data struct {
 		User *struct {
-			Stream *struct{} `json:"stream"`
+			Stream *struct {
+				CreatedAt string `json:"createdAt"`
+			} `json:"stream"`
 		} `json:"user"`
+	} `json:"data"`
+}
+
+type gqlRewardListResponse struct {
+	Data struct {
+		Channel *struct {
+			Self *struct {
+				WatchStreakMilestone *struct {
+					WatchStreakMilestone *struct {
+						AchievementTimestamp string `json:"achievementTimestamp"`
+					} `json:"watchStreakMilestone"`
+				} `json:"watchStreakMilestone"`
+			} `json:"self"`
+		} `json:"channel"`
 	} `json:"data"`
 }
 

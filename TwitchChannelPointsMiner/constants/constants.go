@@ -79,6 +79,7 @@ var GQLOperations = struct {
 	WithIsStreamLiveQuery                  GQLPersistedOperation
 	PlaybackAccessToken                    GQLPersistedOperation
 	VideoPlayerStreamInfoOverlay           GQLPersistedOperation
+	RewardList                             GQLPersistedOperation
 	ClaimCommunityPoints                   GQLPersistedOperation
 	CommunityMomentCalloutClaim            GQLPersistedOperation
 	DropsPageClaimDropRewards              GQLPersistedOperation
@@ -101,6 +102,7 @@ var GQLOperations = struct {
 	WithIsStreamLiveQuery:        newPersistedOperation("WithIsStreamLiveQuery", "04e46329a6786ff3a81c01c50bfa5d725902507a0deb83b0edbf7abe7a3716ea", nil),
 	PlaybackAccessToken:          newPersistedOperation("PlaybackAccessToken", "3093517e37e4f4cb48906155bcd894150aef92617939236d2508f3375ab732ce", nil),
 	VideoPlayerStreamInfoOverlay: newPersistedOperation("VideoPlayerStreamInfoOverlayChannel", "e785b65ff71ad7b363b34878335f27dd9372869ad0c5740a130b9268bcdbe7e7", nil),
+	RewardList:                   newPersistedOperation("RewardList", "0b1471876d7647993731b9e3c6a13bf304c67fb31d07f06a945d42286ee377c4", map[string]interface{}{"shouldIncludeAllSuspendedStreaks": false}),
 	ClaimCommunityPoints:         newPersistedOperation("ClaimCommunityPoints", "46aaeebe02c99afdf4fc97c7c0cba964124bf6b0af229395f1f6d1feed05b3d0", nil),
 	CommunityMomentCalloutClaim:  newPersistedOperation("CommunityMomentCallout_Claim", "e2d67415aead910f7f9ceb45a77b750a1e1d9622c936d832328a0689e054db62", nil),
 	DropsPageClaimDropRewards:    newPersistedOperation("DropsPage_ClaimDropRewards", "a455deea71bdc9015b78eb49f4acfbce8baa7ccbedd28e549bb025bd0f751930", nil),
