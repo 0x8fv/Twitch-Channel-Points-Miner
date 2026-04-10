@@ -220,6 +220,18 @@ func (m *Miner) filterExcludedTargets(targets []string) ([]string, int) {
 	return filtered, excluded
 }
 
+func (m *Miner) shouldClaimDrops(streamers []*entities.Streamer) bool {
+	if m.StreamerSettings.ClaimDrops {
+		return true
+	}
+	for _, streamer := range streamers {
+		if streamer != nil && streamer.Settings.ClaimDrops {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Miner) run(streamers []string, useFollowers bool, order entities.FollowersOrder) {
 	m.startedAt = time.Now()
 	m.logger.Printf("Twitch Channel Points Miner | v%s", constants.Version)
@@ -296,7 +308,8 @@ func (m *Miner) run(streamers []string, useFollowers bool, order entities.Follow
 		m.logger.EmojiPrintf(":white_check_mark:", "%d Streamer loaded! (%s)", len(streamerObjs), formatLoadDuration(time.Since(loadStartedAt)))
 	}
 
-	if m.ClaimDropsStartup && m.StreamerSettings.ClaimDrops {
+	claimDropsEnabled := m.shouldClaimDrops(streamerObjs)
+	if m.ClaimDropsStartup && claimDropsEnabled {
 		if drops, err := m.twitch.ClaimAllDropsFromInventory(); err != nil {
 			m.logger.Printf("startup drop claim failed: %v", err)
 		} else {
@@ -307,7 +320,7 @@ func (m *Miner) run(streamers []string, useFollowers bool, order entities.Follow
 	m.streamers = streamerObjs
 
 	// ? background loops
-	if m.StreamerSettings.ClaimDrops {
+	if claimDropsEnabled {
 		go m.dropClaimer(m.stop)
 	}
 	go m.contextRefresher(streamerObjs, m.stop)
