@@ -30,8 +30,8 @@ const (
 )
 
 const (
-	streakPriorityMinutesBase     = 7.0
-	streakPriorityMinutesExtended = 20.0
+	streakPriorityMinutesBase     = 15.0
+	streakPriorityMinutesExtended = 15.0
 	resolvedStreakCarryoverWindow = 30 * time.Minute
 	falseOfflineStreamStartGrace  = 2 * time.Minute
 )
