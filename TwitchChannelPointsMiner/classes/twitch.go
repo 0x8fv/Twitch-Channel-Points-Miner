@@ -394,7 +394,7 @@ func (t *Twitch) LoadChannelPointsContext(streamer *entities.Streamer) (int, err
 }
 
 func (t *Twitch) CheckStreamerOnline(streamer *entities.Streamer) (bool, error) {
-	_, err := t.streamInfo(streamer.Username)
+	_, err := t.streamInfo(streamer)
 	if err == ErrStreamerOffline {
 		streamer.IsOnline = false
 		streamer.OfflineAt = time.Now()
@@ -429,19 +429,89 @@ func (t *Twitch) IsStreamLive(channelID string) (bool, error) {
 }
 
 type streamInfoResult struct {
-	StreamID     string
-	Title        string
-	Game         map[string]interface{}
-	Tags         []map[string]interface{}
-	ViewersCount int
+	StreamID            string
+	Title               string
+	Game                map[string]interface{}
+	Tags                []map[string]interface{}
+	ViewersCount        int
+	CreatedAt           time.Time
+	WatchStreakComplete bool
 }
 
-func (t *Twitch) streamInfo(username string) (*streamInfoResult, error) {
+func parseRFC3339Timestamp(value string) time.Time {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed
+}
+
+func currentStreamHasCompletedWatchStreak(createdAt, achievementAt time.Time) bool {
+	if createdAt.IsZero() || achievementAt.IsZero() {
+		return false
+	}
+	return achievementAt.After(createdAt)
+}
+
+func extractWatchStreakAchievementAt(resp *gqlRewardListResponse) time.Time {
+	if resp == nil || resp.Data.Channel == nil || resp.Data.Channel.Self == nil {
+		return time.Time{}
+	}
+	milestone := resp.Data.Channel.Self.WatchStreakMilestone
+	if milestone == nil || milestone.WatchStreakMilestone == nil {
+		return time.Time{}
+	}
+	return parseRFC3339Timestamp(milestone.WatchStreakMilestone.AchievementTimestamp)
+}
+
+func (t *Twitch) fallbackStreamCreatedAt(channelID string) time.Time {
+	if channelID == "" {
+		return time.Time{}
+	}
+	op := constants.ClonePersistedOperation(constants.GQLOperations.WithIsStreamLiveQuery)
+	if op.Variables == nil {
+		op.Variables = map[string]interface{}{}
+	}
+	op.Variables["id"] = channelID
+	var resp gqlIsStreamLiveResponse
+	if err := t.PostGQLDecode(op, &resp); err != nil {
+		t.debugf("fallback createdAt lookup failed for channel %s: %v", channelID, err)
+		return time.Time{}
+	}
+	if resp.Data.User == nil || resp.Data.User.Stream == nil {
+		return time.Time{}
+	}
+	return parseRFC3339Timestamp(resp.Data.User.Stream.CreatedAt)
+}
+
+func (t *Twitch) rewardListAchievementAt(channelID string) time.Time {
+	if channelID == "" {
+		return time.Time{}
+	}
+	op := constants.ClonePersistedOperation(constants.GQLOperations.RewardList)
+	if op.Variables == nil {
+		op.Variables = map[string]interface{}{}
+	}
+	op.Variables["channelID"] = channelID
+	var resp gqlRewardListResponse
+	if err := t.PostGQLDecode(op, &resp); err != nil {
+		t.debugf("RewardList lookup failed for channel %s: %v", channelID, err)
+		return time.Time{}
+	}
+	return extractWatchStreakAchievementAt(&resp)
+}
+
+func (t *Twitch) streamInfo(streamer *entities.Streamer) (*streamInfoResult, error) {
+	username := strings.ToLower(streamer.Username)
 	op := constants.ClonePersistedOperation(constants.GQLOperations.VideoPlayerStreamInfoOverlay)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
-	op.Variables["channel"] = strings.ToLower(username)
+	op.Variables["channel"] = username
 	var resp gqlStreamInfoOverlayResponse
 	if err := t.PostGQLDecode(op, &resp); err != nil {
 		return nil, err
@@ -452,13 +522,23 @@ func (t *Twitch) streamInfo(username string) (*streamInfoResult, error) {
 	if resp.Data.User.Stream == nil || resp.Data.User.BroadcastSettings == nil {
 		return nil, ErrStreamerOffline
 	}
-	return &streamInfoResult{
+	createdAt := parseRFC3339Timestamp(resp.Data.User.Stream.CreatedAt)
+	if createdAt.IsZero() {
+		createdAt = t.fallbackStreamCreatedAt(streamer.ChannelID)
+	}
+	result := &streamInfoResult{
 		StreamID:     resp.Data.User.Stream.ID,
 		Title:        resp.Data.User.BroadcastSettings.Title,
 		Game:         gameToInterfaceMap(resp.Data.User.BroadcastSettings.Game),
 		Tags:         tagsToInterfaceMaps(resp.Data.User.Stream.Tags),
 		ViewersCount: resp.Data.User.Stream.ViewersCount,
-	}, nil
+		CreatedAt:    createdAt,
+	}
+	if streamer.Settings.WatchStreak && streamer.ChannelID != "" {
+		achievementAt := t.rewardListAchievementAt(streamer.ChannelID)
+		result.WatchStreakComplete = currentStreamHasCompletedWatchStreak(createdAt, achievementAt)
+	}
+	return result, nil
 }
 
 // ? UpdateStream refreshes metadata and payload required for minute-watched events.
@@ -470,8 +550,7 @@ func (t *Twitch) UpdateStream(streamer *entities.Streamer) error {
 		return nil
 	}
 	prevGame := strings.TrimSpace(streamer.Stream.GameName())
-	prevBroadcastID := streamer.Stream.BroadcastID
-	info, err := t.streamInfo(streamer.Username)
+	info, err := t.streamInfo(streamer)
 	if err != nil {
 		return err
 	}
@@ -482,11 +561,11 @@ func (t *Twitch) UpdateStream(streamer *entities.Streamer) error {
 		game,
 		info.Tags,
 		info.ViewersCount,
+		info.CreatedAt,
 		constants.DropID,
 	)
-	if prevBroadcastID != "" && prevBroadcastID != streamer.Stream.BroadcastID {
-		streamer.Stream.WatchStreakMissing = true
-		streamer.Stream.ResetWatchProgress()
+	if info.WatchStreakComplete {
+		streamer.Stream.WatchStreakMissing = false
 	}
 
 	eventProps := map[string]interface{}{
@@ -1180,6 +1259,8 @@ func operationNote(name string) string {
 		return "check live"
 	case "VideoPlayerStreamInfoOverlayChannel":
 		return "stream info"
+	case "RewardList":
+		return "reward list"
 	case "PlaybackAccessToken":
 		return "playback token"
 	case "ChannelPointsContext":

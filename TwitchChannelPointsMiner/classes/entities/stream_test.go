@@ -15,13 +15,17 @@ func TestStreamUpdateAndFlags(t *testing.T) {
 
 	tagID := "drop-tag"
 	game := map[string]interface{}{"displayName": "Game"}
-	stream.Update("id", "title", game, []map[string]interface{}{{"id": tagID}}, 100, tagID)
+	createdAt := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
+	stream.Update("id", "title", game, []map[string]interface{}{{"id": tagID}}, 100, createdAt, tagID)
 
 	if stream.Title != "title" || stream.BroadcastID != "id" {
 		t.Fatalf("unexpected stream fields: %#v", stream)
 	}
 	if stream.DropsTags != true {
 		t.Fatalf("expected drops tag detection")
+	}
+	if !stream.CreatedAt.Equal(createdAt) {
+		t.Fatalf("createdAt not persisted: got %s want %s", stream.CreatedAt, createdAt)
 	}
 	if stream.UpdateRequired() {
 		t.Fatalf("recent update should not require refresh")
@@ -35,10 +39,42 @@ func TestStreamWatchProgress(t *testing.T) {
 	if stream.MinuteWatched < 1.9 || stream.MinuteWatched > 2.1 {
 		t.Fatalf("minute watched out of range: %f", stream.MinuteWatched)
 	}
+	stream.WatchCount = 2
+	stream.CreatedAt = time.Now()
 
 	stream.ResetWatchProgress()
-	if stream.MinuteWatched != 0 || !stream.lastMinuteUpdate.IsZero() {
+	if stream.MinuteWatched != 0 || stream.WatchCount != 0 || !stream.CreatedAt.IsZero() || !stream.lastMinuteUpdate.IsZero() {
 		t.Fatalf("reset should clear progress")
+	}
+}
+
+func TestStreamUpdateResetsWatchStreakStateOnBroadcastChange(t *testing.T) {
+	stream := NewStream()
+	firstCreatedAt := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
+	stream.Update("broadcast-1", "title", map[string]interface{}{"displayName": "Game"}, nil, 100, firstCreatedAt, "drop-tag")
+	stream.WatchStreakMissing = false
+	stream.MinuteWatched = 3
+	stream.WatchCount = 2
+	stream.CreatedAt = firstCreatedAt
+	stream.lastMinuteUpdate = time.Now()
+
+	secondCreatedAt := firstCreatedAt.Add(2 * time.Hour)
+	stream.Update("broadcast-2", "new title", map[string]interface{}{"displayName": "Game"}, nil, 50, secondCreatedAt, "drop-tag")
+
+	if !stream.WatchStreakMissing {
+		t.Fatalf("expected watch streak to reset on new broadcast")
+	}
+	if stream.MinuteWatched != 0 {
+		t.Fatalf("minute watched should reset, got %f", stream.MinuteWatched)
+	}
+	if stream.WatchCount != 0 {
+		t.Fatalf("watch count should reset, got %d", stream.WatchCount)
+	}
+	if !stream.CreatedAt.Equal(secondCreatedAt) {
+		t.Fatalf("createdAt should update to new broadcast start, got %s want %s", stream.CreatedAt, secondCreatedAt)
+	}
+	if !stream.lastMinuteUpdate.IsZero() {
+		t.Fatalf("lastMinuteUpdate should reset on new broadcast")
 	}
 }
 

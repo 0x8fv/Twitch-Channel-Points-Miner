@@ -24,6 +24,8 @@ type Stream struct {
 
 	WatchStreakMissing bool
 	MinuteWatched      float64
+	WatchCount         int
+	CreatedAt          time.Time
 	StreamUpAt         time.Time
 	lastUpdate         time.Time
 	lastMinuteUpdate   time.Time
@@ -39,12 +41,19 @@ func NewStream() *Stream {
 	}
 }
 
-func (s *Stream) Update(broadcastID, title string, game map[string]interface{}, tags []map[string]interface{}, viewers int, dropID string) {
+func (s *Stream) Update(broadcastID, title string, game map[string]interface{}, tags []map[string]interface{}, viewers int, createdAt time.Time, dropID string) {
+	if s.BroadcastID != "" && s.BroadcastID != broadcastID {
+		s.WatchStreakMissing = true
+		s.ResetWatchProgress()
+	}
 	s.BroadcastID = broadcastID
 	s.Title = strings.TrimSpace(title)
 	s.Game = game
 	s.Tags = tags
 	s.ViewersCount = viewers
+	if !createdAt.IsZero() {
+		s.CreatedAt = createdAt
+	}
 	s.DropsTags = false
 	for _, tag := range tags {
 		if id, ok := tag["id"].(string); ok && id == dropID && len(game) > 0 {
@@ -71,6 +80,8 @@ func (s *Stream) ResetWatchProgress() {
 		return
 	}
 	s.MinuteWatched = 0
+	s.WatchCount = 0
+	s.CreatedAt = time.Time{}
 	s.lastMinuteUpdate = time.Time{}
 }
 

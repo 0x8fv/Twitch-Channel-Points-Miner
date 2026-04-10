@@ -1275,7 +1275,17 @@ func (m *Miner) updateHistory(streamer *entities.Streamer, reason string, amount
 	}
 	entry.Count++
 	entry.Amount += amount
-	if reason == "WATCH_STREAK" && streamer.Stream != nil {
+	if streamer.Stream == nil {
+		return
+	}
+	if reason == "WATCH" {
+		streamer.Stream.WatchCount++
+		if streamer.Stream.WatchStreakMissing && streamer.Stream.WatchCount >= 2 {
+			streamer.Stream.WatchStreakMissing = false
+		}
+		return
+	}
+	if reason == "WATCH_STREAK" {
 		streamer.Stream.WatchStreakMissing = false
 	}
 }
