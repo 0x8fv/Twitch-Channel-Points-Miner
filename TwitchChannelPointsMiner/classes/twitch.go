@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -480,6 +481,21 @@ func extractWatchStreakAchievementAt(resp *gqlRewardListResponse) time.Time {
 	return parseRFC3339Timestamp(milestone.WatchStreakMilestone.AchievementTimestamp)
 }
 
+func extractWatchStreakLength(resp *gqlRewardListResponse) int {
+	if resp == nil || resp.Data.Channel == nil || resp.Data.Channel.Self == nil {
+		return -1
+	}
+	milestone := resp.Data.Channel.Self.WatchStreakMilestone
+	if milestone == nil || milestone.WatchStreakMilestone == nil {
+		return -1
+	}
+	out, err := strconv.Atoi(milestone.WatchStreakMilestone.Value)
+	if err != nil {
+		return -1
+	}
+	return out
+}
+
 func (t *Twitch) fallbackStreamCreatedAt(channelID string) time.Time {
 	if channelID == "" {
 		return time.Time{}
@@ -515,6 +531,23 @@ func (t *Twitch) rewardListAchievementAt(channelID string) time.Time {
 		return time.Time{}
 	}
 	return extractWatchStreakAchievementAt(&resp)
+}
+
+func (t *Twitch) RewardListStreakLength(channelID string) int {
+	if channelID == "" {
+		return -1
+	}
+	op := constants.ClonePersistedOperation(constants.GQLOperations.RewardList)
+	if op.Variables == nil {
+		op.Variables = map[string]interface{}{}
+	}
+	op.Variables["channelID"] = channelID
+	var resp gqlRewardListResponse
+	if err := t.PostGQLDecode(op, &resp); err != nil {
+		t.debugf("RewardList lookup failed for channel %s: %v", channelID, err)
+		return -1
+	}
+	return extractWatchStreakLength(&resp)
 }
 
 func (t *Twitch) streamInfoOverlay(username, channelID string) (*streamInfoResult, error) {
