@@ -604,9 +604,9 @@ func (t *Twitch) rewardListAchievementAt(channelID string) time.Time {
 	return extractWatchStreakAchievementAt(&resp)
 }
 
-func (t *Twitch) RewardListStreakLength(channelID string) int {
+func (t *Twitch) LogExtraInfo(channelID string, online bool) string {
 	if channelID == "" {
-		return -1
+		return ""
 	}
 	op := constants.ClonePersistedOperation(constants.GQLOperations.RewardList)
 	if op.Variables == nil {
@@ -616,9 +616,21 @@ func (t *Twitch) RewardListStreakLength(channelID string) int {
 	var resp gqlRewardListResponse
 	if err := t.PostGQLDecode(op, &resp); err != nil {
 		t.debugf("RewardList lookup failed for channel %s: %v", channelID, err)
-		return -1
+		return ""
 	}
-	return extractWatchStreakLength(&resp)
+	extrainfoSuffix := fmt.Sprintf(" | streak length %d", extractWatchStreakLength(&resp))
+	if expiresAt := extractWatchStreakExpiresAt(&resp); !expiresAt.IsZero() {
+		extrainfoSuffix += fmt.Sprintf(" | expires at %s", expiresAt.Local())
+	}
+	if online {
+		if createdAt := t.fallbackStreamCreatedAt(channelID); !createdAt.IsZero() {
+			extrainfoSuffix += fmt.Sprintf(" | started at %s", createdAt.Local())
+		}
+		if achievementAt := extractWatchStreakAchievementAt(&resp); !achievementAt.IsZero() {
+			extrainfoSuffix += fmt.Sprintf(" | streak achievement timestamp %s", achievementAt.Local())
+		}
+	}
+	return extrainfoSuffix
 }
 
 func (t *Twitch) streamInfoOverlay(username, channelID string) (*streamInfoResult, error) {
