@@ -73,6 +73,7 @@ type gqlRewardListResponse struct {
 						Value                string `json:"value"`
 						AchievementTimestamp string `json:"achievementTimestamp"`
 					} `json:"watchStreakMilestone"`
+					ExpiresAt string `json:"expiresAt"`
 				} `json:"watchStreakMilestone"`
 			} `json:"self"`
 		} `json:"channel"`
