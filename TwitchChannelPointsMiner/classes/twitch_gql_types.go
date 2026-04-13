@@ -70,6 +70,7 @@ type gqlRewardListResponse struct {
 			Self *struct {
 				WatchStreakMilestone *struct {
 					WatchStreakMilestone *struct {
+						Value                string `json:"value"`
 						AchievementTimestamp string `json:"achievementTimestamp"`
 					} `json:"watchStreakMilestone"`
 				} `json:"watchStreakMilestone"`
