@@ -70,7 +70,15 @@ func (s *Stream) UpdateRequired() bool {
 
 func (s *Stream) UpdateMinuteWatched() {
 	if !s.lastMinuteUpdate.IsZero() {
-		s.MinuteWatched += time.Since(s.lastMinuteUpdate).Minutes()
+		duration := time.Since(s.lastMinuteUpdate).Minutes()
+		// if it's been more than 2 minutes since last minute-watched update,
+		// stream probably was not being continuously watched, so reset to 0
+		// (likely got pre-empted by something higher priority)
+		if duration > 2.0 {
+			s.MinuteWatched = 0
+		} else {
+			s.MinuteWatched += duration
+		}
 	}
 	s.lastMinuteUpdate = time.Now()
 }
