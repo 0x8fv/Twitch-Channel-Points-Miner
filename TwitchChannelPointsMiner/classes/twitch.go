@@ -394,7 +394,7 @@ func (t *Twitch) LoadChannelPointsContext(streamer *entities.Streamer) (int, err
 }
 
 func (t *Twitch) CheckStreamerOnline(streamer *entities.Streamer) (bool, error) {
-	_, err := t.streamInfo(streamer)
+	info, err := t.streamInfoOverlay(streamer.Username, streamer.ChannelID)
 	if err == ErrStreamerOffline {
 		streamer.IsOnline = false
 		streamer.OfflineAt = time.Now()
@@ -403,6 +403,18 @@ func (t *Twitch) CheckStreamerOnline(streamer *entities.Streamer) (bool, error) 
 	if err != nil {
 		return streamer.IsOnline, err
 	}
+	if streamer.Stream == nil {
+		streamer.Stream = entities.NewStream()
+	}
+	streamer.Stream.Update(
+		info.StreamID,
+		info.Title,
+		info.Game,
+		info.Tags,
+		info.ViewersCount,
+		info.CreatedAt,
+		constants.DropID,
+	)
 	streamer.IsOnline = true
 	streamer.OnlineAt = time.Now()
 	return true, nil
@@ -505,8 +517,8 @@ func (t *Twitch) rewardListAchievementAt(channelID string) time.Time {
 	return extractWatchStreakAchievementAt(&resp)
 }
 
-func (t *Twitch) streamInfo(streamer *entities.Streamer) (*streamInfoResult, error) {
-	username := strings.ToLower(streamer.Username)
+func (t *Twitch) streamInfoOverlay(username, channelID string) (*streamInfoResult, error) {
+	username = strings.ToLower(strings.TrimSpace(username))
 	op := constants.ClonePersistedOperation(constants.GQLOperations.VideoPlayerStreamInfoOverlay)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
@@ -524,19 +536,26 @@ func (t *Twitch) streamInfo(streamer *entities.Streamer) (*streamInfoResult, err
 	}
 	createdAt := parseRFC3339Timestamp(resp.Data.User.Stream.CreatedAt)
 	if createdAt.IsZero() {
-		createdAt = t.fallbackStreamCreatedAt(streamer.ChannelID)
+		createdAt = t.fallbackStreamCreatedAt(channelID)
 	}
-	result := &streamInfoResult{
+	return &streamInfoResult{
 		StreamID:     resp.Data.User.Stream.ID,
 		Title:        resp.Data.User.BroadcastSettings.Title,
 		Game:         gameToInterfaceMap(resp.Data.User.BroadcastSettings.Game),
 		Tags:         tagsToInterfaceMaps(resp.Data.User.Stream.Tags),
 		ViewersCount: resp.Data.User.Stream.ViewersCount,
 		CreatedAt:    createdAt,
+	}, nil
+}
+
+func (t *Twitch) streamInfo(streamer *entities.Streamer) (*streamInfoResult, error) {
+	result, err := t.streamInfoOverlay(streamer.Username, streamer.ChannelID)
+	if err != nil {
+		return nil, err
 	}
 	if streamer.Settings.WatchStreak && streamer.ChannelID != "" {
 		achievementAt := t.rewardListAchievementAt(streamer.ChannelID)
-		result.WatchStreakComplete = currentStreamHasCompletedWatchStreak(createdAt, achievementAt)
+		result.WatchStreakComplete = currentStreamHasCompletedWatchStreak(result.CreatedAt, achievementAt)
 	}
 	return result, nil
 }

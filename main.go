@@ -186,6 +186,7 @@ type config struct {
 	ShowUsernameInConsole      bool   `json:"show_username_in_console"`
 	ShowClaimedBonusMsg        bool   `json:"show_claimed_bonus_msg"`
 	ShowGame                   bool   `json:"show_game"`
+	WatchStreakWarmStartCache  bool   `json:"watch_streak_warm_start_cache"`
 	IRCMode                    string `json:"chat_presence"`
 	DisableAtInNickname        bool   `json:"disable_at_in_nickname"`
 	// ShowDropsIndicator         bool      `json:"show_drops_indicator"`
@@ -348,6 +349,7 @@ func defaultConfig() map[string]interface{} {
 		"show_username_in_console":      false,
 		"show_claimed_bonus_msg":        true,
 		"show_game":                     true,
+		"watch_streak_warm_start_cache": true,
 		"chat_presence":                 "ONLINE",
 		"disable_at_in_nickname":        false,
 		"timezone":                      nil,
@@ -628,6 +630,7 @@ func main() {
 		cfg.DisableAtInNickname,
 		cfg.ShowGame,
 		cfg.WatchQueueLogging,
+		cfg.WatchStreakWarmStartCache,
 		// cfg.ShowDropsIndicator,
 	)
 
