@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -132,6 +133,7 @@ type Miner struct {
 	LoggerSettings             LoggerSettings
 	StreamerSettings           entities.StreamerSettings
 	StreamerOverrides          map[string]entities.StreamerSettings
+	WatchStreakWarmStartCache  bool
 	logger                     *Logger
 	startedAt                  time.Time
 	twitch                     *classpkg.Twitch
@@ -149,10 +151,12 @@ type Miner struct {
 	showGameInfo               bool
 	logWatchQueue              bool
 	anonymizer                 *privacy.Anonymizer
+	warmStartCache             *watchStreakWarmStartCache
+	warmStartCachePath         string
 	// showDropsIndicator         bool
 }
 
-func NewMiner(username, password string, claimDropsStartup bool, disableCertCheck bool, loggerSettings LoggerSettings, streamerSettings entities.StreamerSettings, streamerOverrides map[string]entities.StreamerSettings, priorityNames []string, streamerExclude []string, gamePriority []string, gameExclude []string, disableAtInNickname bool, showGameInfo bool, logWatchQueue bool) *Miner {
+func NewMiner(username, password string, claimDropsStartup bool, disableCertCheck bool, loggerSettings LoggerSettings, streamerSettings entities.StreamerSettings, streamerOverrides map[string]entities.StreamerSettings, priorityNames []string, streamerExclude []string, gamePriority []string, gameExclude []string, disableAtInNickname bool, showGameInfo bool, logWatchQueue bool, watchStreakWarmStartCache bool) *Miner {
 	streamerSettings.Default()
 	priorityList := normalizeGameList(gamePriority)
 	excludedGames := make(map[string]struct{})
@@ -167,6 +171,11 @@ func NewMiner(username, password string, claimDropsStartup bool, disableCertChec
 	for idx, name := range priorityList {
 		priorityIndex[name] = idx
 	}
+	safeUsername := sanitizeFilename(strings.ToLower(strings.TrimSpace(username)))
+	warmStartCachePath := ""
+	if safeUsername != "" {
+		warmStartCachePath = filepath.Join("log", fmt.Sprintf("watch_streak_cache.%s.json", safeUsername))
+	}
 	return &Miner{
 		Username:                   username,
 		Password:                   password,
@@ -175,6 +184,7 @@ func NewMiner(username, password string, claimDropsStartup bool, disableCertChec
 		LoggerSettings:             loggerSettings,
 		StreamerSettings:           streamerSettings,
 		StreamerOverrides:          streamerOverrides,
+		WatchStreakWarmStartCache:  watchStreakWarmStartCache,
 		logger:                     NewLogger(loggerSettings, username),
 		watchPriorities:            parseWatchPriorities(priorityNames),
 		streamerExclusions:         excludedStreamers,
@@ -186,6 +196,7 @@ func NewMiner(username, password string, claimDropsStartup bool, disableCertChec
 		showGameInfo:               showGameInfo,
 		logWatchQueue:              logWatchQueue,
 		anonymizer:                 privacy.New(loggerSettings.AnonymizeLogs),
+		warmStartCachePath:         warmStartCachePath,
 		// showDropsIndicator:         showDropsIndicator,
 	}
 }
@@ -232,6 +243,48 @@ func (m *Miner) shouldClaimDrops(streamers []*entities.Streamer) bool {
 	return false
 }
 
+func (m *Miner) loadWarmStartCache() {
+	if m == nil || !m.WatchStreakWarmStartCache {
+		return
+	}
+	m.warmStartCache = loadWatchStreakWarmStartCache(m.warmStartCachePath, m.Username)
+}
+
+func (m *Miner) saveWarmStartCacheSnapshot(streamers []*entities.Streamer) {
+	if m == nil || m.warmStartCache == nil {
+		return
+	}
+	now := time.Now()
+	for _, streamer := range streamers {
+		m.warmStartCache.updateFromStreamer(streamer, now)
+	}
+	if err := m.warmStartCache.saveIfDirty(); err != nil && m.logger != nil {
+		m.logger.Debugf("warm-start cache save failed: %v", err)
+	}
+}
+
+func (m *Miner) syncWarmStartCacheFromStreamer(streamer *entities.Streamer) {
+	if m == nil || m.warmStartCache == nil || streamer == nil {
+		return
+	}
+	m.warmStartCache.updateFromStreamer(streamer, time.Now())
+	if err := m.warmStartCache.saveIfDirty(); err != nil && m.logger != nil {
+		m.logger.Debugf("warm-start cache save failed for %s: %v", m.rawStreamerName(streamer.Username), err)
+	}
+}
+
+func (m *Miner) applyWarmStartCache(streamer *entities.Streamer) bool {
+	if m == nil || m.warmStartCache == nil || streamer == nil || streamer.Stream == nil || !streamer.IsOnline {
+		return false
+	}
+	entry, ok := m.warmStartCache.resolvedEntryForStreamer(streamer, time.Now())
+	if !ok {
+		return false
+	}
+	streamer.Stream.WatchStreakMissing = entry.WatchStreakMissing
+	return true
+}
+
 func (m *Miner) run(streamers []string, useFollowers bool, order entities.FollowersOrder) {
 	m.startedAt = time.Now()
 	m.logger.Printf("Twitch Channel Points Miner | v%s", constants.Version)
@@ -250,6 +303,7 @@ func (m *Miner) run(streamers []string, useFollowers bool, order entities.Follow
 	if err := m.twitch.Login(m.Username); err != nil {
 		m.logger.Fatalf("login failed: %v", err)
 	}
+	m.loadWarmStartCache()
 	// TODO: Fix Available Campaigns
 	// m.logAvailableCampaigns()
 
@@ -303,6 +357,7 @@ func (m *Miner) run(streamers []string, useFollowers bool, order entities.Follow
 		streamerObjs = append(streamerObjs, s)
 		m.initialPoints[s.Username] = s.ChannelPoints
 	}
+	m.saveWarmStartCacheSnapshot(streamerObjs)
 
 	if len(streamerObjs) > 0 {
 		m.logger.EmojiPrintf(":white_check_mark:", "%d Streamer loaded! (%s)", len(streamerObjs), formatLoadDuration(time.Since(loadStartedAt)))
@@ -421,6 +476,14 @@ func (m *Miner) minuteWatcher(streamers []*entities.Streamer, stop <-chan struct
 				}
 			}
 
+			prevBroadcastID := ""
+			prevCreatedAt := time.Time{}
+			prevWatchStreakMissing := true
+			if streamer.Stream != nil {
+				prevBroadcastID = streamer.Stream.BroadcastID
+				prevCreatedAt = streamer.Stream.CreatedAt
+				prevWatchStreakMissing = streamer.Stream.WatchStreakMissing
+			}
 			if err := m.twitch.SendMinuteWatched(streamer); err != nil {
 				if errors.Is(err, classpkg.ErrStreamerOffline) {
 					live, liveErr := m.twitch.IsStreamLive(streamer.ChannelID)
@@ -434,6 +497,8 @@ func (m *Miner) minuteWatcher(streamers []*entities.Streamer, stop <-chan struct
 					}
 				}
 				m.logger.Errorf("minute watch %s: %v", m.styledStreamerName(streamer), err)
+			} else if streamer.Stream != nil && (prevBroadcastID != streamer.Stream.BroadcastID || !prevCreatedAt.Equal(streamer.Stream.CreatedAt) || prevWatchStreakMissing != streamer.Stream.WatchStreakMissing) {
+				m.syncWarmStartCacheFromStreamer(streamer)
 			}
 
 			if m.sleepWithStop(interval, stop) {
@@ -452,12 +517,24 @@ func (m *Miner) refreshStreamForPreference(streamer *entities.Streamer) {
 			return
 		}
 	}
+	prevBroadcastID := ""
+	prevCreatedAt := time.Time{}
+	prevWatchStreakMissing := true
+	if streamer.Stream != nil {
+		prevBroadcastID = streamer.Stream.BroadcastID
+		prevCreatedAt = streamer.Stream.CreatedAt
+		prevWatchStreakMissing = streamer.Stream.WatchStreakMissing
+	}
 	if err := m.twitch.UpdateStream(streamer); err != nil {
 		if errors.Is(err, classpkg.ErrStreamerOffline) {
 			m.setPresence(streamer, false, "stream-info")
 		} else {
 			m.logger.Debugf("stream info %s: %v", m.styledStreamerName(streamer), err)
 		}
+		return
+	}
+	if streamer.Stream != nil && (prevBroadcastID != streamer.Stream.BroadcastID || !prevCreatedAt.Equal(streamer.Stream.CreatedAt) || prevWatchStreakMissing != streamer.Stream.WatchStreakMissing) {
+		m.syncWarmStartCacheFromStreamer(streamer)
 	}
 }
 
@@ -473,11 +550,22 @@ func (m *Miner) resolveGameName(streamer *entities.Streamer) string {
 	if !m.showGameInfo || m.twitch == nil || !streamer.IsOnline {
 		return ""
 	}
+	prevBroadcastID := ""
+	prevCreatedAt := time.Time{}
+	prevWatchStreakMissing := true
+	if streamer.Stream != nil {
+		prevBroadcastID = streamer.Stream.BroadcastID
+		prevCreatedAt = streamer.Stream.CreatedAt
+		prevWatchStreakMissing = streamer.Stream.WatchStreakMissing
+	}
 	if err := m.twitch.UpdateStream(streamer); err != nil {
 		if m.logger != nil && m.logger.DebugEnabled() {
 			m.logger.Debugf("update stream %s for game: %v", m.styledStreamerName(streamer), err)
 		}
 		return ""
+	}
+	if streamer.Stream != nil && (prevBroadcastID != streamer.Stream.BroadcastID || !prevCreatedAt.Equal(streamer.Stream.CreatedAt) || prevWatchStreakMissing != streamer.Stream.WatchStreakMissing) {
+		m.syncWarmStartCacheFromStreamer(streamer)
 	}
 	if streamer.Stream != nil {
 		return strings.TrimSpace(streamer.Stream.GameName())
@@ -588,6 +676,20 @@ func (m *Miner) gamePreference(streamer *entities.Streamer) (int, bool) {
 	return baseRank, false
 }
 
+func (m *Miner) resolveTimedOutStreak(streamer *entities.Streamer, now time.Time) bool {
+	if streamer == nil || streamer.Stream == nil {
+		return false
+	}
+	if !streamer.Settings.WatchStreak || !streamer.Stream.WatchStreakMissing {
+		return false
+	}
+	if streamer.Stream.MinuteWatched < m.streakPriorityLimit(now) {
+		return false
+	}
+	streamer.Stream.WatchStreakMissing = false
+	return true
+}
+
 func (m *Miner) pickStreamersToWatch(streamers []*entities.Streamer) []*entities.Streamer {
 	now := time.Now()
 	type candidate struct {
@@ -613,6 +715,9 @@ func (m *Miner) pickStreamersToWatch(streamers []*entities.Streamer) []*entities
 		m.refreshStreamForPreference(s)
 		if s == nil || !s.IsOnline {
 			continue
+		}
+		if m.resolveTimedOutStreak(s, now) {
+			m.syncWarmStartCacheFromStreamer(s)
 		}
 		rank, excluded := m.gamePreference(s)
 		if excluded {
@@ -1018,6 +1123,9 @@ func (m *Miner) updatePresence(streamer *entities.Streamer) {
 		m.logger.Printf("online check %s: %v", m.styledStreamerName(streamer), err)
 		return
 	}
+	if online && !streamer.PresenceKnown {
+		m.applyWarmStartCache(streamer)
+	}
 	m.setPresence(streamer, online, "poll")
 }
 
@@ -1231,6 +1339,10 @@ func (m *Miner) logPointsDelta(streamer *entities.Streamer, delta int, reason st
 func (m *Miner) handlePubSubGain(streamer *entities.Streamer, earned int, reason string, balance int) {
 	prev := streamer.ChannelPoints
 	expected := prev + earned
+	prevWatchStreakMissing := true
+	if streamer != nil && streamer.Stream != nil {
+		prevWatchStreakMissing = streamer.Stream.WatchStreakMissing
+	}
 
 	// ? Prefer applying the delta (`earned`) over trusting the absolute balance from PubSub
 	// ? PubSub messages can arrive out of order, and may contain a stale pre-spend balance
@@ -1259,6 +1371,9 @@ func (m *Miner) handlePubSubGain(streamer *entities.Streamer, earned int, reason
 	}
 	m.logPointsDelta(streamer, delta, reason)
 	m.updateHistory(streamer, reason, earned)
+	if streamer != nil && streamer.Stream != nil && prevWatchStreakMissing != streamer.Stream.WatchStreakMissing {
+		m.syncWarmStartCacheFromStreamer(streamer)
+	}
 }
 
 func (m *Miner) updateHistory(streamer *entities.Streamer, reason string, amount int) {
@@ -1316,6 +1431,7 @@ func (m *Miner) setPresence(streamer *entities.Streamer, online bool, reason str
 		} else {
 			m.logOffline(streamer)
 		}
+		m.syncWarmStartCacheFromStreamer(streamer)
 		return
 	}
 	if prevOnline != online {
@@ -1324,12 +1440,15 @@ func (m *Miner) setPresence(streamer *entities.Streamer, online bool, reason str
 		} else {
 			m.logOffline(streamer)
 		}
+		m.syncWarmStartCacheFromStreamer(streamer)
 		return
 	}
 	if reason != "" && !online {
 		// ? Offline message already logged for state changes; keep silent on no-op toggles.
+		m.syncWarmStartCacheFromStreamer(streamer)
 		return
 	}
+	m.syncWarmStartCacheFromStreamer(streamer)
 }
 
 func (m *Miner) updateChatPresence(streamer *entities.Streamer, online bool) {

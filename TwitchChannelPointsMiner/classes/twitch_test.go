@@ -126,6 +126,48 @@ func TestCurrentStreamHasCompletedWatchStreak(t *testing.T) {
 	}
 }
 
+func TestCheckStreamerOnlineSkipsRewardListAndUsesFallbackCreatedAt(t *testing.T) {
+	rewardListCalls := 0
+	liveQueryCalls := 0
+	twitch := newTestTwitch(t, func(operation string) (*http.Response, error) {
+		switch operation {
+		case "VideoPlayerStreamInfoOverlayChannel":
+			return jsonResponse(http.StatusOK, `{"data":{"user":{"stream":{"id":"broadcast-1","viewersCount":42,"tags":[]},"broadcastSettings":{"title":"title","game":{"displayName":"Game"}}}}}`), nil
+		case "WithIsStreamLiveQuery":
+			liveQueryCalls++
+			return jsonResponse(http.StatusOK, `{"data":{"user":{"stream":{"createdAt":"2026-03-01T10:00:00Z"}}}}`), nil
+		case "RewardList":
+			rewardListCalls++
+			return jsonResponse(http.StatusOK, `{"data":{"channel":{"self":{"watchStreakMilestone":{"watchStreakMilestone":{"achievementTimestamp":"2026-03-01T10:06:00Z"}}}}}}`), nil
+		default:
+			t.Fatalf("unexpected operation: %s", operation)
+			return nil, nil
+		}
+	})
+	streamer := newTestStreamer(true)
+
+	online, err := twitch.CheckStreamerOnline(streamer)
+	if err != nil {
+		t.Fatalf("CheckStreamerOnline returned error: %v", err)
+	}
+	if !online {
+		t.Fatalf("expected streamer to be online")
+	}
+	if rewardListCalls != 0 {
+		t.Fatalf("CheckStreamerOnline should not query RewardList")
+	}
+	if liveQueryCalls != 1 {
+		t.Fatalf("WithIsStreamLiveQuery call count got %d want 1", liveQueryCalls)
+	}
+	expected := time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
+	if !streamer.Stream.CreatedAt.Equal(expected) {
+		t.Fatalf("createdAt got %s want %s", streamer.Stream.CreatedAt, expected)
+	}
+	if got := streamer.Stream.GameName(); got != "Game" {
+		t.Fatalf("game name got %q want %q", got, "Game")
+	}
+}
+
 func TestUpdateStreamMarksWatchStreakCompleteFromRewardListMilestone(t *testing.T) {
 	rewardListCalls := 0
 	twitch := newTestTwitch(t, func(operation string) (*http.Response, error) {

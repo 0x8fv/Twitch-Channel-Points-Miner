@@ -116,6 +116,30 @@ func TestShouldPrioritizeStreak(t *testing.T) {
 	}
 }
 
+func TestResolveTimedOutStreak(t *testing.T) {
+	now := time.Now()
+	m := &Miner{}
+	streamer := &entities.Streamer{
+		Settings: entities.StreamerSettings{
+			WatchStreak: true,
+		},
+		Stream: &entities.Stream{
+			WatchStreakMissing: true,
+			MinuteWatched:      streakPriorityMinutesBase,
+		},
+	}
+
+	if !m.resolveTimedOutStreak(streamer, now) {
+		t.Fatalf("expected timed-out streak to resolve")
+	}
+	if streamer.Stream.WatchStreakMissing {
+		t.Fatalf("timed-out streak should clear pending state")
+	}
+	if m.resolveTimedOutStreak(streamer, now) {
+		t.Fatalf("resolved streak should not be resolved twice")
+	}
+}
+
 func TestGamePreference(t *testing.T) {
 	m := &Miner{
 		gamePriority:      []string{"valorant", "wow"},
