@@ -20,7 +20,8 @@ type gqlChannelPointsContextResponse struct {
 					} `json:"communityPoints"`
 				} `json:"self"`
 				CommunityPointsSettings struct {
-					Goals json.RawMessage `json:"goals"`
+					Goals     json.RawMessage `json:"goals"`
+					IsEnabled bool            `json:"isEnabled"`
 				} `json:"communityPointsSettings"`
 			} `json:"channel"`
 		} `json:"community"`
