@@ -159,6 +159,7 @@ type Miner struct {
 	warmStartCache             *watchStreakWarmStartCache
 	warmStartCachePath         string
 	activeStreakWatches        map[string]activeStreakWatch
+	activeStreakMu             sync.Mutex
 	// showDropsIndicator         bool
 }
 
@@ -839,7 +840,9 @@ func (m *Miner) pickStreamersToWatch(streamers []*entities.Streamer) []*entities
 				continue
 			}
 			if !m.shouldKeepActiveStreak(s, now) || !activeStreakWatchMatches(s, watch) {
+				m.activeStreakMu.Lock()
 				delete(m.activeStreakWatches, key)
+				m.activeStreakMu.Unlock()
 				continue
 			}
 			activeStreaks = append(activeStreaks, c)
@@ -1082,10 +1085,13 @@ func (m *Miner) syncActiveStreakWatch(streamer *entities.Streamer, now time.Time
 	}
 	if !m.shouldKeepActiveStreak(streamer, now) {
 		if m.activeStreakWatches != nil {
+			m.activeStreakMu.Lock()
 			delete(m.activeStreakWatches, key)
+			m.activeStreakMu.Unlock()
 		}
 		return
 	}
+	m.activeStreakMu.Lock()
 	if m.activeStreakWatches == nil {
 		m.activeStreakWatches = make(map[string]activeStreakWatch)
 	}
@@ -1093,6 +1099,7 @@ func (m *Miner) syncActiveStreakWatch(streamer *entities.Streamer, now time.Time
 		BroadcastID: streamer.Stream.BroadcastID,
 		CreatedAt:   streamer.Stream.CreatedAt,
 	}
+	m.activeStreakMu.Unlock()
 }
 
 // ? streakPriorityLimit adjusts streak priority duration:
