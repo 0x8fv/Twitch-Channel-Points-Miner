@@ -116,6 +116,29 @@ func TestShouldPrioritizeStreak(t *testing.T) {
 	}
 }
 
+func TestShouldPrioritizeStreakAllowsRestartedStreamWithinOfflineCooldown(t *testing.T) {
+	now := time.Now()
+	offlineAt := now.Add(-10 * time.Minute)
+
+	m := &Miner{}
+	streamer := &entities.Streamer{
+		Settings: entities.StreamerSettings{
+			WatchStreak: true,
+		},
+		OfflineAt: offlineAt,
+		Stream: &entities.Stream{
+			WatchStreakMissing: true,
+			MinuteWatched:      3,
+			StreamUpAt:         now.Add(-9 * time.Minute),
+			CreatedAt:          now.Add(-9 * time.Minute),
+		},
+	}
+
+	if !m.shouldPrioritizeStreak(streamer, now) {
+		t.Fatalf("restarted stream should regain streak priority inside the offline cooldown")
+	}
+}
+
 func TestResolveTimedOutStreak(t *testing.T) {
 	now := time.Now()
 	m := &Miner{}
@@ -277,6 +300,54 @@ func TestPickStreamersToWatchSkipsSubscribedPriorityWhenNone(t *testing.T) {
 	}
 	if got[0] != streamers[2] || got[1] != streamers[3] {
 		t.Fatalf("expected lowest points prioritized, got %s then %s", got[0].Username, got[1].Username)
+	}
+}
+
+func TestPickStreamersToWatchPrioritizesRestartedStreakCandidate(t *testing.T) {
+	now := time.Now()
+	onlineAt := now.Add(-time.Minute)
+
+	first := &entities.Streamer{
+		Username:      "first",
+		IsOnline:      true,
+		OnlineAt:      onlineAt,
+		ChannelPoints: 100,
+	}
+	second := &entities.Streamer{
+		Username:      "second",
+		IsOnline:      true,
+		OnlineAt:      onlineAt,
+		ChannelPoints: 200,
+	}
+	restarted := &entities.Streamer{
+		Username:  "restarted",
+		IsOnline:  true,
+		OnlineAt:  onlineAt,
+		OfflineAt: now.Add(-10 * time.Minute),
+		Settings: entities.StreamerSettings{
+			WatchStreak: true,
+		},
+		Stream: &entities.Stream{
+			WatchStreakMissing: true,
+			MinuteWatched:      3,
+			StreamUpAt:         now.Add(-9 * time.Minute),
+			CreatedAt:          now.Add(-9 * time.Minute),
+		},
+	}
+
+	m := &Miner{
+		watchPriorities: defaultWatchPriorities(),
+	}
+
+	got := m.pickStreamersToWatch([]*entities.Streamer{first, second, restarted})
+	if len(got) != 2 {
+		t.Fatalf("expected 2 watchers got %d", len(got))
+	}
+	if got[0] != restarted {
+		t.Fatalf("expected restarted streak candidate to take the first slot, got %s", got[0].Username)
+	}
+	if got[1] != first {
+		t.Fatalf("expected the next order candidate to fill slot two, got %s", got[1].Username)
 	}
 }
 
