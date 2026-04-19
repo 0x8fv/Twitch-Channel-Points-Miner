@@ -34,6 +34,11 @@ const (
 	streakPriorityMinutesExtended = 20.0
 )
 
+type activeStreakWatch struct {
+	BroadcastID string
+	CreatedAt   time.Time
+}
+
 type watchPriority int
 
 const (
@@ -153,6 +158,7 @@ type Miner struct {
 	anonymizer                 *privacy.Anonymizer
 	warmStartCache             *watchStreakWarmStartCache
 	warmStartCachePath         string
+	activeStreakWatches        map[string]activeStreakWatch
 	// showDropsIndicator         bool
 }
 
@@ -197,6 +203,7 @@ func NewMiner(username, password string, claimDropsStartup bool, disableCertChec
 		logWatchQueue:              logWatchQueue,
 		anonymizer:                 privacy.New(loggerSettings.AnonymizeLogs),
 		warmStartCachePath:         warmStartCachePath,
+		activeStreakWatches:        make(map[string]activeStreakWatch),
 		// showDropsIndicator:         showDropsIndicator,
 	}
 }
@@ -500,6 +507,7 @@ func (m *Miner) minuteWatcher(streamers []*entities.Streamer, stop <-chan struct
 			} else if streamer.Stream != nil && (prevBroadcastID != streamer.Stream.BroadcastID || !prevCreatedAt.Equal(streamer.Stream.CreatedAt) || prevWatchStreakMissing != streamer.Stream.WatchStreakMissing) {
 				m.syncWarmStartCacheFromStreamer(streamer)
 			}
+			m.syncActiveStreakWatch(streamer, time.Now())
 
 			if m.sleepWithStop(interval, stop) {
 				return
@@ -774,7 +782,7 @@ func (m *Miner) pickStreamersToWatch(streamers []*entities.Streamer) []*entities
 	seen := make(map[int]struct{})
 	selectedGames := make(map[string]struct{})
 	selectedReason := make(map[int]string)
-	add := func(c candidate, reason string) {
+	add := func(c candidate, reason string, force bool) {
 		if len(selected) >= maxConcurrentWatchers {
 			return
 		}
@@ -782,7 +790,7 @@ func (m *Miner) pickStreamersToWatch(streamers []*entities.Streamer) []*entities
 			return
 		}
 		game := c.game
-		if game != "" {
+		if !force && game != "" {
 			if _, ok := selectedGames[game]; ok {
 				otherAvailable := false
 				for _, alt := range candidates {
@@ -811,7 +819,33 @@ func (m *Miner) pickStreamersToWatch(streamers []*entities.Streamer) []*entities
 
 	pick := func(list []candidate, includeGameRank bool, less func(a, b candidate) bool, reason string) {
 		for _, c := range sortCandidates(list, less, includeGameRank) {
-			add(c, reason)
+			add(c, reason, false)
+			if len(selected) >= maxConcurrentWatchers {
+				break
+			}
+		}
+	}
+
+	if len(m.activeStreakWatches) > 0 {
+		activeStreaks := make([]candidate, 0, len(m.activeStreakWatches))
+		for _, c := range candidates {
+			s := streamers[c.idx]
+			if s == nil {
+				continue
+			}
+			key := m.activeStreakWatchKey(s)
+			watch, ok := m.activeStreakWatches[key]
+			if !ok {
+				continue
+			}
+			if !m.shouldKeepActiveStreak(s, now) || !activeStreakWatchMatches(s, watch) {
+				delete(m.activeStreakWatches, key)
+				continue
+			}
+			activeStreaks = append(activeStreaks, c)
+		}
+		for _, c := range sortCandidates(activeStreaks, nil, false) {
+			add(c, "ACTIVE_STREAK", true)
 			if len(selected) >= maxConcurrentWatchers {
 				break
 			}
@@ -896,14 +930,14 @@ func (m *Miner) pickStreamersToWatch(streamers []*entities.Streamer) []*entities
 		}
 		if streakPick != nil {
 			if len(selected) < maxConcurrentWatchers {
-				add(*streakPick, "FORCE_STREAK_SLOT2")
+				add(*streakPick, "FORCE_STREAK_SLOT2", false)
 			} else {
 				keepIdx := selected[0]
 				selected = selected[:0]
 				seen = make(map[int]struct{})
 				selectedGames = make(map[string]struct{})
 				if keepCand, ok := candidateByIdx[keepIdx]; ok {
-					add(keepCand, selectedReason[keepIdx])
+					add(keepCand, selectedReason[keepIdx], false)
 				}
 				if len(selected) < maxConcurrentWatchers {
 					if _, ok := seen[streakPick.idx]; !ok {
@@ -934,6 +968,7 @@ func (m *Miner) pickStreamersToWatch(streamers []*entities.Streamer) []*entities
 	watchList := make([]*entities.Streamer, 0, len(selected))
 	for _, idx := range selected {
 		watchList = append(watchList, streamers[idx])
+		m.syncActiveStreakWatch(streamers[idx], now)
 	}
 
 	if m.logger != nil && m.logWatchQueue {
@@ -1005,6 +1040,59 @@ func (m *Miner) shouldPrioritizeStreak(streamer *entities.Streamer, now time.Tim
 	}
 	// ? Keep streak priority long enough for Twitch to issue the streak check (typically ~15 minutes).
 	return streamer.Stream.MinuteWatched < m.streakPriorityLimit(now)
+}
+
+func (m *Miner) activeStreakWatchKey(streamer *entities.Streamer) string {
+	if streamer == nil {
+		return ""
+	}
+	if channelID := strings.TrimSpace(streamer.ChannelID); channelID != "" {
+		return channelID
+	}
+	return strings.ToLower(strings.TrimSpace(streamer.Username))
+}
+
+func activeStreakWatchMatches(streamer *entities.Streamer, watch activeStreakWatch) bool {
+	if streamer == nil || streamer.Stream == nil {
+		return false
+	}
+	if streamer.Stream.BroadcastID != "" || watch.BroadcastID != "" {
+		return streamer.Stream.BroadcastID != "" && streamer.Stream.BroadcastID == watch.BroadcastID
+	}
+	if streamer.Stream.CreatedAt.IsZero() || watch.CreatedAt.IsZero() {
+		return false
+	}
+	return streamer.Stream.CreatedAt.Equal(watch.CreatedAt)
+}
+
+func (m *Miner) shouldKeepActiveStreak(streamer *entities.Streamer, now time.Time) bool {
+	if !m.shouldPrioritizeStreak(streamer, now) {
+		return false
+	}
+	return streamer.Stream.MinuteWatched > 0
+}
+
+func (m *Miner) syncActiveStreakWatch(streamer *entities.Streamer, now time.Time) {
+	if m == nil {
+		return
+	}
+	key := m.activeStreakWatchKey(streamer)
+	if key == "" {
+		return
+	}
+	if !m.shouldKeepActiveStreak(streamer, now) {
+		if m.activeStreakWatches != nil {
+			delete(m.activeStreakWatches, key)
+		}
+		return
+	}
+	if m.activeStreakWatches == nil {
+		m.activeStreakWatches = make(map[string]activeStreakWatch)
+	}
+	m.activeStreakWatches[key] = activeStreakWatch{
+		BroadcastID: streamer.Stream.BroadcastID,
+		CreatedAt:   streamer.Stream.CreatedAt,
+	}
 }
 
 // ? streakPriorityLimit adjusts streak priority duration:
@@ -1425,11 +1513,13 @@ func (m *Miner) updateHistory(streamer *entities.Streamer, reason string, amount
 		if streamer.Stream.WatchStreakMissing && streamer.Stream.WatchCount >= 2 {
 			streamer.Stream.WatchStreakMissing = false
 		}
+		m.syncActiveStreakWatch(streamer, time.Now())
 		return
 	}
 	if reason == "WATCH_STREAK" {
 		streamer.Stream.WatchStreakMissing = false
 	}
+	m.syncActiveStreakWatch(streamer, time.Now())
 }
 
 func (m *Miner) handlePubSubPresence(streamer *entities.Streamer, online bool, reason string) {
@@ -1448,6 +1538,7 @@ func (m *Miner) setPresence(streamer *entities.Streamer, online bool, reason str
 		}
 	}
 	streamer.IsOnline = online
+	m.syncActiveStreakWatch(streamer, time.Now())
 	m.updateChatPresence(streamer, online)
 	if online && m.showGameInfo {
 		m.resolveGameName(streamer)

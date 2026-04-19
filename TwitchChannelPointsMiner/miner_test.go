@@ -8,6 +8,26 @@ import (
 	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/classes/entities"
 )
 
+func testWatchSelectionStreakStreamer(username, channelID, game string, onlineAt time.Time, minuteWatched float64) *entities.Streamer {
+	return &entities.Streamer{
+		Username:  username,
+		ChannelID: channelID,
+		IsOnline:  true,
+		OnlineAt:  onlineAt,
+		Settings: entities.StreamerSettings{
+			WatchStreak: true,
+		},
+		Stream: &entities.Stream{
+			BroadcastID:        username + "-broadcast",
+			Game:               map[string]interface{}{"displayName": game},
+			WatchStreakMissing: true,
+			MinuteWatched:      minuteWatched,
+			CreatedAt:          onlineAt,
+			StreamUpAt:         onlineAt,
+		},
+	}
+}
+
 func TestParseWatchPriorities(t *testing.T) {
 	tests := []struct {
 		name string
@@ -348,6 +368,122 @@ func TestPickStreamersToWatchPrioritizesRestartedStreakCandidate(t *testing.T) {
 	}
 	if got[1] != first {
 		t.Fatalf("expected the next order candidate to fill slot two, got %s", got[1].Username)
+	}
+}
+
+func TestPickStreamersToWatchKeepsInProgressStreakSlotsWhenHigherPriorityStreakAppears(t *testing.T) {
+	now := time.Now()
+	onlineAt := now.Add(-time.Minute)
+
+	first := testWatchSelectionStreakStreamer("first", "channel-first", "casual game", onlineAt, 1.5)
+	second := testWatchSelectionStreakStreamer("second", "channel-second", "another game", onlineAt, 2.0)
+	higherPriority := testWatchSelectionStreakStreamer("priority", "channel-priority", "priority game", onlineAt, 0)
+
+	m := &Miner{
+		watchPriorities:   defaultWatchPriorities(),
+		gamePriority:      []string{"priority game"},
+		gamePriorityIndex: map[string]int{"priority game": 0},
+	}
+
+	initial := m.pickStreamersToWatch([]*entities.Streamer{first, second})
+	if len(initial) != 2 {
+		t.Fatalf("expected 2 watchers got %d", len(initial))
+	}
+	if initial[0] != first || initial[1] != second {
+		t.Fatalf("expected initial in-progress streak selection to stay in order, got %s then %s", initial[0].Username, initial[1].Username)
+	}
+
+	got := m.pickStreamersToWatch([]*entities.Streamer{first, second, higherPriority})
+	if len(got) != 2 {
+		t.Fatalf("expected 2 watchers got %d", len(got))
+	}
+	if got[0] != first || got[1] != second {
+		t.Fatalf("expected in-progress streaks to keep both slots, got %s then %s", got[0].Username, got[1].Username)
+	}
+}
+
+func TestPickStreamersToWatchDoesNotPinFreshStreaksWithoutProgress(t *testing.T) {
+	now := time.Now()
+	onlineAt := now.Add(-time.Minute)
+
+	first := testWatchSelectionStreakStreamer("first", "channel-first", "casual game", onlineAt, 0)
+	second := testWatchSelectionStreakStreamer("second", "channel-second", "another game", onlineAt, 0)
+	higherPriority := testWatchSelectionStreakStreamer("priority", "channel-priority", "priority game", onlineAt, 0)
+
+	m := &Miner{
+		watchPriorities:   defaultWatchPriorities(),
+		gamePriority:      []string{"priority game"},
+		gamePriorityIndex: map[string]int{"priority game": 0},
+	}
+
+	initial := m.pickStreamersToWatch([]*entities.Streamer{first, second})
+	if len(initial) != 2 {
+		t.Fatalf("expected 2 watchers got %d", len(initial))
+	}
+
+	got := m.pickStreamersToWatch([]*entities.Streamer{first, second, higherPriority})
+	if len(got) != 2 {
+		t.Fatalf("expected 2 watchers got %d", len(got))
+	}
+	if got[0] != higherPriority || got[1] != first {
+		t.Fatalf("expected fresh streaks to remain pre-emptible, got %s then %s", got[0].Username, got[1].Username)
+	}
+}
+
+func TestPickStreamersToWatchReleasesResolvedActiveStreakSlot(t *testing.T) {
+	now := time.Now()
+	onlineAt := now.Add(-time.Minute)
+
+	first := testWatchSelectionStreakStreamer("first", "channel-first", "casual game", onlineAt, 1.5)
+	second := testWatchSelectionStreakStreamer("second", "channel-second", "another game", onlineAt, 2.0)
+	higherPriority := testWatchSelectionStreakStreamer("priority", "channel-priority", "priority game", onlineAt, 0)
+
+	m := &Miner{
+		watchPriorities:   defaultWatchPriorities(),
+		gamePriority:      []string{"priority game"},
+		gamePriorityIndex: map[string]int{"priority game": 0},
+	}
+
+	initial := m.pickStreamersToWatch([]*entities.Streamer{first, second})
+	if len(initial) != 2 {
+		t.Fatalf("expected 2 watchers got %d", len(initial))
+	}
+
+	first.Stream.WatchStreakMissing = false
+
+	got := m.pickStreamersToWatch([]*entities.Streamer{first, second, higherPriority})
+	if len(got) != 2 {
+		t.Fatalf("expected 2 watchers got %d", len(got))
+	}
+	if got[0] != second || got[1] != higherPriority {
+		t.Fatalf("expected resolved streak slot to release, got %s then %s", got[0].Username, got[1].Username)
+	}
+}
+
+func TestSyncActiveStreakWatchTracksOnlyEligibleInProgressStreaks(t *testing.T) {
+	now := time.Now()
+	streamer := testWatchSelectionStreakStreamer("first", "channel-first", "casual game", now.Add(-time.Minute), 0)
+	m := &Miner{}
+
+	m.syncActiveStreakWatch(streamer, now)
+	if _, ok := m.activeStreakWatches[streamer.ChannelID]; ok {
+		t.Fatalf("fresh streak without progress should not be tracked")
+	}
+
+	streamer.Stream.MinuteWatched = 1.25
+	m.syncActiveStreakWatch(streamer, now)
+	watch, ok := m.activeStreakWatches[streamer.ChannelID]
+	if !ok {
+		t.Fatalf("eligible streak should be tracked")
+	}
+	if watch.BroadcastID != streamer.Stream.BroadcastID {
+		t.Fatalf("tracked broadcast mismatch got %q want %q", watch.BroadcastID, streamer.Stream.BroadcastID)
+	}
+
+	streamer.Stream.WatchStreakMissing = false
+	m.syncActiveStreakWatch(streamer, now)
+	if _, ok := m.activeStreakWatches[streamer.ChannelID]; ok {
+		t.Fatalf("resolved streak should be removed from active tracking")
 	}
 }
 
