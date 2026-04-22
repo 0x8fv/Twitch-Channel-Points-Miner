@@ -159,6 +159,42 @@ func TestShouldPrioritizeStreakAllowsRestartedStreamWithinOfflineCooldown(t *tes
 	}
 }
 
+func TestResolvedStreakShortRestartDoesNotPrioritizeStreak(t *testing.T) {
+	now := time.Now()
+	m := &Miner{logger: discardLogger()}
+	streamer := &entities.Streamer{
+		Username:      "restarted",
+		ChannelID:     "channel-restarted",
+		IsOnline:      true,
+		PresenceKnown: true,
+		OnlineAt:      now.Add(-time.Minute),
+		Settings: entities.StreamerSettings{
+			WatchStreak: true,
+		},
+		Stream: &entities.Stream{
+			WatchStreakMissing: true,
+			MinuteWatched:      0,
+			StreamUpAt:         now.Add(-15 * time.Minute),
+			CreatedAt:          now.Add(-15 * time.Minute),
+		},
+	}
+	m.updateHistory(streamer, "WATCH_STREAK", 50)
+
+	m.setPresence(streamer, false, "poll")
+	streamer.Stream = &entities.Stream{
+		WatchStreakMissing: true,
+		MinuteWatched:      0,
+		StreamUpAt:         now.Add(time.Minute),
+		CreatedAt:          now.Add(time.Minute),
+	}
+	m.setPresence(streamer, true, "poll")
+	streamer.OnlineAt = now.Add(-time.Minute)
+
+	if m.shouldPrioritizeStreak(streamer, time.Now()) {
+		t.Fatalf("resolved short restart should not keep streak priority")
+	}
+}
+
 func TestResolveTimedOutStreak(t *testing.T) {
 	now := time.Now()
 	m := &Miner{}
@@ -180,6 +216,353 @@ func TestResolveTimedOutStreak(t *testing.T) {
 	}
 	if m.resolveTimedOutStreak(streamer, now) {
 		t.Fatalf("resolved streak should not be resolved twice")
+	}
+}
+
+func TestResolveTimedOutStreakShortRestartStillPrioritizesStreak(t *testing.T) {
+	now := time.Now()
+	m := &Miner{logger: discardLogger()}
+	streamer := &entities.Streamer{
+		Username:      "timedout",
+		ChannelID:     "channel-timedout",
+		IsOnline:      true,
+		PresenceKnown: true,
+		OnlineAt:      now.Add(-time.Minute),
+		Settings: entities.StreamerSettings{
+			WatchStreak: true,
+		},
+		Stream: &entities.Stream{
+			WatchStreakMissing: true,
+			MinuteWatched:      streakPriorityMinutesBase,
+			StreamUpAt:         now.Add(-15 * time.Minute),
+			CreatedAt:          now.Add(-15 * time.Minute),
+		},
+	}
+
+	if !m.resolveTimedOutStreak(streamer, now) {
+		t.Fatalf("expected timed-out streak to resolve before restart")
+	}
+
+	m.setPresence(streamer, false, "poll")
+	streamer.Stream = &entities.Stream{
+		WatchStreakMissing: true,
+		MinuteWatched:      0,
+		StreamUpAt:         now.Add(time.Minute),
+		CreatedAt:          now.Add(time.Minute),
+	}
+	m.setPresence(streamer, true, "poll")
+	streamer.OnlineAt = now.Add(-time.Minute)
+
+	if !m.shouldPrioritizeStreak(streamer, time.Now()) {
+		t.Fatalf("timed-out short restart should still prioritize streak")
+	}
+}
+
+func TestResolvedStreakShortRestartCarryoverSurvivesStreamRefreshReset(t *testing.T) {
+	now := time.Now()
+	m := &Miner{logger: discardLogger()}
+	streamer := &entities.Streamer{
+		Username:      "restarted",
+		ChannelID:     "channel-restarted",
+		IsOnline:      true,
+		PresenceKnown: true,
+		OnlineAt:      now.Add(-time.Minute),
+		Settings: entities.StreamerSettings{
+			WatchStreak: true,
+		},
+		Stream: &entities.Stream{
+			WatchStreakMissing: true,
+			MinuteWatched:      2,
+			StreamUpAt:         now.Add(-15 * time.Minute),
+			CreatedAt:          now.Add(-15 * time.Minute),
+		},
+	}
+
+	m.updateHistory(streamer, "WATCH_STREAK", 50)
+
+	m.setPresence(streamer, false, "poll")
+	streamer.Stream = &entities.Stream{
+		WatchStreakMissing: true,
+		MinuteWatched:      0,
+		StreamUpAt:         now.Add(time.Minute),
+		CreatedAt:          now.Add(time.Minute),
+	}
+	m.setPresence(streamer, true, "poll")
+	streamer.OnlineAt = now.Add(-time.Minute)
+
+	streamer.Stream = &entities.Stream{
+		WatchStreakMissing: true,
+		MinuteWatched:      0,
+		StreamUpAt:         now.Add(2 * time.Minute),
+		CreatedAt:          now.Add(2 * time.Minute),
+	}
+
+	if m.shouldPrioritizeStreak(streamer, time.Now()) {
+		t.Fatalf("resolved short restart should stay suppressed after stream refresh reset")
+	}
+}
+
+func TestResolvedStreakShortRestartCarryoverLearnsCompletionFromUpdateSync(t *testing.T) {
+	now := time.Now()
+	m := &Miner{logger: discardLogger()}
+	streamer := &entities.Streamer{
+		Username:      "restarted",
+		ChannelID:     "channel-restarted",
+		IsOnline:      true,
+		PresenceKnown: true,
+		OnlineAt:      now.Add(-time.Minute),
+		Settings: entities.StreamerSettings{
+			WatchStreak: true,
+		},
+		Stream: &entities.Stream{
+			WatchStreakMissing: true,
+			MinuteWatched:      2,
+			StreamUpAt:         now.Add(-15 * time.Minute),
+			CreatedAt:          now.Add(-15 * time.Minute),
+		},
+	}
+
+	streamer.Stream.WatchStreakMissing = false
+	m.syncResolvedStreakState(streamer, streamer.Stream.BroadcastID, streamer.Stream.CreatedAt, true)
+
+	m.setPresence(streamer, false, "poll")
+	streamer.Stream = &entities.Stream{
+		WatchStreakMissing: true,
+		MinuteWatched:      0,
+		StreamUpAt:         now.Add(time.Minute),
+		CreatedAt:          now.Add(time.Minute),
+	}
+	m.setPresence(streamer, true, "poll")
+	streamer.OnlineAt = now.Add(-time.Minute)
+
+	if m.shouldPrioritizeStreak(streamer, time.Now()) {
+		t.Fatalf("completion learned from update sync should suppress short restart streak priority")
+	}
+}
+
+func TestResolvedStreakShortRestartCarryoverSurvivesMultipleRestartCycles(t *testing.T) {
+	now := time.Now()
+	m := &Miner{logger: discardLogger()}
+	streamer := &entities.Streamer{
+		Username:      "restarted",
+		ChannelID:     "channel-restarted",
+		IsOnline:      true,
+		PresenceKnown: true,
+		OnlineAt:      now.Add(-time.Minute),
+		Settings: entities.StreamerSettings{
+			WatchStreak: true,
+		},
+		Stream: &entities.Stream{
+			WatchStreakMissing: true,
+			MinuteWatched:      2,
+			StreamUpAt:         now.Add(-15 * time.Minute),
+			CreatedAt:          now.Add(-15 * time.Minute),
+		},
+	}
+	m.updateHistory(streamer, "WATCH_STREAK", 50)
+
+	m.setPresence(streamer, false, "poll")
+	firstCarryoverUntil := streamer.ResolvedStreakCarryoverUntil
+	if firstCarryoverUntil.IsZero() {
+		t.Fatalf("first restart should arm a carryover window")
+	}
+	streamer.Stream = &entities.Stream{
+		WatchStreakMissing: true,
+		MinuteWatched:      0,
+		StreamUpAt:         now.Add(time.Minute),
+		CreatedAt:          now.Add(time.Minute),
+	}
+	m.setPresence(streamer, true, "poll")
+	streamer.OnlineAt = now.Add(-time.Minute)
+
+	m.setPresence(streamer, false, "poll")
+	if !streamer.ResolvedStreakCarryoverUntil.Equal(firstCarryoverUntil) {
+		t.Fatalf("repeated short restart should preserve original carryover expiry, got %s want %s", streamer.ResolvedStreakCarryoverUntil, firstCarryoverUntil)
+	}
+	streamer.Stream = &entities.Stream{
+		WatchStreakMissing: true,
+		MinuteWatched:      0,
+		StreamUpAt:         now.Add(2 * time.Minute),
+		CreatedAt:          now.Add(2 * time.Minute),
+	}
+	m.setPresence(streamer, true, "poll")
+	streamer.OnlineAt = now.Add(-time.Minute)
+
+	if m.shouldPrioritizeStreak(streamer, time.Now()) {
+		t.Fatalf("carryover should continue suppressing streak priority across repeated short restarts")
+	}
+}
+
+func TestResolvedStreakCarryoverExpiresAfterWindow(t *testing.T) {
+	now := time.Now()
+	m := &Miner{}
+	streamer := &entities.Streamer{
+		Settings: entities.StreamerSettings{
+			WatchStreak: true,
+		},
+		ResolvedStreakCarryover:      true,
+		ResolvedStreakCarryoverUntil: now.Add(-time.Second),
+		Stream: &entities.Stream{
+			WatchStreakMissing: true,
+			MinuteWatched:      0,
+			StreamUpAt:         now.Add(-10 * time.Minute),
+			CreatedAt:          now.Add(-10 * time.Minute),
+		},
+	}
+
+	if !m.shouldPrioritizeStreak(streamer, now) {
+		t.Fatalf("expired carryover should no longer suppress streak priority")
+	}
+	if streamer.ResolvedStreakCarryover {
+		t.Fatalf("expired carryover should be cleared")
+	}
+	if !streamer.ResolvedStreakCarryoverUntil.IsZero() {
+		t.Fatalf("expired carryover timestamp should be cleared")
+	}
+}
+
+func TestResolvedStreakCarryoverArmsAcrossOnlineBroadcastReset(t *testing.T) {
+	now := time.Now()
+	m := &Miner{logger: discardLogger()}
+	streamer := &entities.Streamer{
+		Username:      "restarted",
+		ChannelID:     "channel-restarted",
+		IsOnline:      true,
+		PresenceKnown: true,
+		OnlineAt:      now.Add(-time.Minute),
+		Settings: entities.StreamerSettings{
+			WatchStreak: true,
+		},
+		Stream: &entities.Stream{
+			BroadcastID:        "broadcast-2",
+			WatchStreakMissing: true,
+			MinuteWatched:      0,
+			StreamUpAt:         now.Add(-time.Minute),
+			CreatedAt:          now.Add(-time.Minute),
+		},
+	}
+	streamer.CompletedWatchStreak = true
+
+	m.syncResolvedStreakState(streamer, "broadcast-1", now.Add(-15*time.Minute), true)
+
+	if m.shouldPrioritizeStreak(streamer, now) {
+		t.Fatalf("online broadcast reset after a completed segment should suppress streak priority")
+	}
+	if !streamer.ResolvedStreakCarryover {
+		t.Fatalf("online broadcast reset should arm carryover")
+	}
+	if streamer.ResolvedStreakCarryoverUntil.IsZero() {
+		t.Fatalf("online broadcast reset should set carryover expiry")
+	}
+}
+
+func TestResolvedStreakCarryoverDoesNotRearmAfterExpiryWithoutNewCompletion(t *testing.T) {
+	now := time.Now()
+	m := &Miner{logger: discardLogger()}
+	streamer := &entities.Streamer{
+		Username:      "restarted",
+		ChannelID:     "channel-restarted",
+		IsOnline:      true,
+		PresenceKnown: true,
+		OnlineAt:      now.Add(-time.Minute),
+		Settings: entities.StreamerSettings{
+			WatchStreak: true,
+		},
+		Stream: &entities.Stream{
+			BroadcastID:        "broadcast-a",
+			WatchStreakMissing: true,
+			MinuteWatched:      2,
+			StreamUpAt:         now.Add(-15 * time.Minute),
+			CreatedAt:          now.Add(-15 * time.Minute),
+		},
+	}
+
+	m.updateHistory(streamer, "WATCH_STREAK", 50)
+
+	m.setPresence(streamer, false, "poll")
+	if streamer.CompletedWatchStreak {
+		t.Fatalf("completion should be consumed when carryover is armed")
+	}
+	if streamer.ResolvedStreakCarryoverUntil.IsZero() {
+		t.Fatalf("short restart should arm carryover")
+	}
+
+	streamer.Stream = &entities.Stream{
+		BroadcastID:        "broadcast-b",
+		WatchStreakMissing: true,
+		MinuteWatched:      0,
+		StreamUpAt:         now.Add(-time.Minute),
+		CreatedAt:          now.Add(-time.Minute),
+	}
+	m.setPresence(streamer, true, "poll")
+
+	streamer.ResolvedStreakCarryoverUntil = now.Add(-time.Second)
+	streamer.Stream = &entities.Stream{
+		BroadcastID:        "broadcast-c",
+		WatchStreakMissing: true,
+		MinuteWatched:      0,
+		StreamUpAt:         now,
+		CreatedAt:          now,
+	}
+	m.syncResolvedStreakState(streamer, "broadcast-b", now.Add(-time.Minute), true)
+
+	if streamer.ResolvedStreakCarryover {
+		t.Fatalf("expired carryover must not re-arm from the previous segment completion")
+	}
+	if !streamer.ResolvedStreakCarryoverUntil.IsZero() {
+		t.Fatalf("expired carryover should stay cleared after a later segment roll")
+	}
+}
+
+func TestResolvedStreakCarryoverRefreshesFromFreshCompletionDuringActiveWindow(t *testing.T) {
+	now := time.Now()
+	m := &Miner{logger: discardLogger()}
+	streamer := &entities.Streamer{
+		Username:      "restarted",
+		ChannelID:     "channel-restarted",
+		IsOnline:      true,
+		PresenceKnown: true,
+		OnlineAt:      now.Add(-time.Minute),
+		Settings: entities.StreamerSettings{
+			WatchStreak: true,
+		},
+		Stream: &entities.Stream{
+			BroadcastID:        "broadcast-a",
+			WatchStreakMissing: true,
+			MinuteWatched:      2,
+			StreamUpAt:         now.Add(-15 * time.Minute),
+			CreatedAt:          now.Add(-15 * time.Minute),
+		},
+	}
+
+	m.updateHistory(streamer, "WATCH_STREAK", 50)
+	m.setPresence(streamer, false, "poll")
+	firstCarryoverUntil := streamer.ResolvedStreakCarryoverUntil
+	if firstCarryoverUntil.IsZero() {
+		t.Fatalf("segment A should arm carryover")
+	}
+
+	streamer.Stream = &entities.Stream{
+		BroadcastID:        "broadcast-b",
+		WatchStreakMissing: true,
+		MinuteWatched:      0,
+		StreamUpAt:         now.Add(-time.Minute),
+		CreatedAt:          now.Add(-time.Minute),
+	}
+	m.setPresence(streamer, true, "poll")
+
+	m.updateHistory(streamer, "WATCH_STREAK", 75)
+	if !streamer.CompletedWatchStreak {
+		t.Fatalf("segment B should record a fresh completion")
+	}
+
+	time.Sleep(20 * time.Millisecond)
+	m.setPresence(streamer, false, "poll")
+	if streamer.CompletedWatchStreak {
+		t.Fatalf("fresh completion should be consumed when carryover is refreshed")
+	}
+	if !streamer.ResolvedStreakCarryoverUntil.After(firstCarryoverUntil) {
+		t.Fatalf("fresh completion should refresh carryover expiry, got %s want after %s", streamer.ResolvedStreakCarryoverUntil, firstCarryoverUntil)
 	}
 }
 
@@ -368,6 +751,62 @@ func TestPickStreamersToWatchPrioritizesRestartedStreakCandidate(t *testing.T) {
 	}
 	if got[1] != first {
 		t.Fatalf("expected the next order candidate to fill slot two, got %s", got[1].Username)
+	}
+}
+
+func TestPickStreamersToWatchDoesNotPrioritizeRestartedResolvedStreak(t *testing.T) {
+	now := time.Now()
+	onlineAt := now.Add(-time.Minute)
+
+	first := &entities.Streamer{
+		Username: "first",
+		IsOnline: true,
+		OnlineAt: onlineAt,
+	}
+	second := &entities.Streamer{
+		Username: "second",
+		IsOnline: true,
+		OnlineAt: onlineAt,
+	}
+	restarted := &entities.Streamer{
+		Username:      "restarted",
+		ChannelID:     "channel-restarted",
+		IsOnline:      true,
+		PresenceKnown: true,
+		OnlineAt:      onlineAt,
+		Settings: entities.StreamerSettings{
+			WatchStreak: true,
+		},
+		Stream: &entities.Stream{
+			WatchStreakMissing: true,
+			MinuteWatched:      0,
+			StreamUpAt:         now.Add(-15 * time.Minute),
+			CreatedAt:          now.Add(-15 * time.Minute),
+		},
+	}
+
+	m := &Miner{
+		logger:          discardLogger(),
+		watchPriorities: defaultWatchPriorities(),
+	}
+	m.updateHistory(restarted, "WATCH_STREAK", 50)
+
+	m.setPresence(restarted, false, "poll")
+	restarted.Stream = &entities.Stream{
+		WatchStreakMissing: true,
+		MinuteWatched:      0,
+		StreamUpAt:         now.Add(time.Minute),
+		CreatedAt:          now.Add(time.Minute),
+	}
+	m.setPresence(restarted, true, "poll")
+	restarted.OnlineAt = onlineAt
+
+	got := m.pickStreamersToWatch([]*entities.Streamer{first, second, restarted})
+	if len(got) != 2 {
+		t.Fatalf("expected 2 watchers got %d", len(got))
+	}
+	if got[0] != first || got[1] != second {
+		t.Fatalf("expected resolved restarted streak to stay out of streak priority, got %s then %s", got[0].Username, got[1].Username)
 	}
 }
 

@@ -617,6 +617,7 @@ func (t *Twitch) UpdateStream(streamer *entities.Streamer) error {
 		constants.DropID,
 	)
 	if info.WatchStreakComplete {
+		streamer.CompletedWatchStreak = true
 		streamer.Stream.WatchStreakMissing = false
 	}
 

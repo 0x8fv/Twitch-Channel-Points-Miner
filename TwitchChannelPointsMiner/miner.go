@@ -505,8 +505,11 @@ func (m *Miner) minuteWatcher(streamers []*entities.Streamer, stop <-chan struct
 					}
 				}
 				m.logger.Errorf("minute watch %s: %v", m.styledStreamerName(streamer), err)
-			} else if streamer.Stream != nil && (prevBroadcastID != streamer.Stream.BroadcastID || !prevCreatedAt.Equal(streamer.Stream.CreatedAt) || prevWatchStreakMissing != streamer.Stream.WatchStreakMissing) {
-				m.syncWarmStartCacheFromStreamer(streamer)
+			} else {
+				m.syncResolvedStreakState(streamer, prevBroadcastID, prevCreatedAt, prevWatchStreakMissing)
+				if streamer.Stream != nil && (prevBroadcastID != streamer.Stream.BroadcastID || !prevCreatedAt.Equal(streamer.Stream.CreatedAt) || prevWatchStreakMissing != streamer.Stream.WatchStreakMissing) {
+					m.syncWarmStartCacheFromStreamer(streamer)
+				}
 			}
 			m.syncActiveStreakWatch(streamer, time.Now())
 
@@ -542,6 +545,7 @@ func (m *Miner) refreshStreamForPreference(streamer *entities.Streamer) {
 		}
 		return
 	}
+	m.syncResolvedStreakState(streamer, prevBroadcastID, prevCreatedAt, prevWatchStreakMissing)
 	if streamer.Stream != nil && (prevBroadcastID != streamer.Stream.BroadcastID || !prevCreatedAt.Equal(streamer.Stream.CreatedAt) || prevWatchStreakMissing != streamer.Stream.WatchStreakMissing) {
 		m.syncWarmStartCacheFromStreamer(streamer)
 	}
@@ -573,6 +577,7 @@ func (m *Miner) resolveGameName(streamer *entities.Streamer) string {
 		}
 		return ""
 	}
+	m.syncResolvedStreakState(streamer, prevBroadcastID, prevCreatedAt, prevWatchStreakMissing)
 	if streamer.Stream != nil && (prevBroadcastID != streamer.Stream.BroadcastID || !prevCreatedAt.Equal(streamer.Stream.CreatedAt) || prevWatchStreakMissing != streamer.Stream.WatchStreakMissing) {
 		m.syncWarmStartCacheFromStreamer(streamer)
 	}
@@ -1035,7 +1040,7 @@ func (m *Miner) shouldPrioritizeStreak(streamer *entities.Streamer, now time.Tim
 	if streamer == nil || streamer.Stream == nil {
 		return false
 	}
-	if !streamer.Settings.WatchStreak || !streamer.Stream.WatchStreakMissing {
+	if !streamer.Settings.WatchStreak || activeResolvedStreakCarryover(streamer, now) || !streamer.Stream.WatchStreakMissing {
 		return false
 	}
 	if m.streakCooldownBlocksCurrentStream(streamer, now) {
@@ -1043,6 +1048,90 @@ func (m *Miner) shouldPrioritizeStreak(streamer *entities.Streamer, now time.Tim
 	}
 	// ? Keep streak priority long enough for Twitch to issue the streak check (typically ~15 minutes).
 	return streamer.Stream.MinuteWatched < m.streakPriorityLimit(now)
+}
+
+func rememberResolvedStreakCarryover(streamer *entities.Streamer) {
+	if streamer == nil {
+		return
+	}
+	now := time.Now()
+	if streamer.CompletedWatchStreak {
+		streamer.ResolvedStreakCarryover = true
+		streamer.ResolvedStreakCarryoverUntil = now.Add(30 * time.Minute)
+		streamer.CompletedWatchStreak = false
+		return
+	}
+	if activeResolvedStreakCarryover(streamer, now) {
+		return
+	}
+	streamer.ResolvedStreakCarryover = false
+	streamer.ResolvedStreakCarryoverUntil = time.Time{}
+}
+
+func restoreResolvedStreakCarryover(streamer *entities.Streamer, now time.Time) {
+	if streamer == nil {
+		return
+	}
+	if !activeResolvedStreakCarryover(streamer, now) {
+		streamer.ResolvedStreakCarryover = false
+		streamer.ResolvedStreakCarryoverUntil = time.Time{}
+		streamer.CompletedWatchStreak = false
+		return
+	}
+	applyResolvedStreakCarryover(streamer, now)
+}
+
+func activeResolvedStreakCarryover(streamer *entities.Streamer, now time.Time) bool {
+	if streamer == nil || !streamer.ResolvedStreakCarryover || streamer.ResolvedStreakCarryoverUntil.IsZero() {
+		return false
+	}
+	if now.After(streamer.ResolvedStreakCarryoverUntil) {
+		streamer.ResolvedStreakCarryover = false
+		streamer.ResolvedStreakCarryoverUntil = time.Time{}
+		return false
+	}
+	return true
+}
+
+func applyResolvedStreakCarryover(streamer *entities.Streamer, now time.Time) {
+	if streamer == nil || streamer.Stream == nil || !activeResolvedStreakCarryover(streamer, now) {
+		return
+	}
+	streamer.Stream.WatchStreakMissing = false
+}
+
+func activateResolvedStreakCarryover(streamer *entities.Streamer, now time.Time) {
+	if streamer == nil {
+		return
+	}
+	streamer.ResolvedStreakCarryover = true
+	streamer.ResolvedStreakCarryoverUntil = now.Add(30 * time.Minute)
+}
+
+func markActualStreakCompleted(streamer *entities.Streamer) {
+	if streamer == nil {
+		return
+	}
+	streamer.CompletedWatchStreak = true
+	if streamer.Stream != nil {
+		streamer.Stream.WatchStreakMissing = false
+	}
+}
+
+func (m *Miner) syncResolvedStreakState(streamer *entities.Streamer, prevBroadcastID string, prevCreatedAt time.Time, prevWatchStreakMissing bool) {
+	if streamer == nil || streamer.Stream == nil {
+		return
+	}
+	if prevWatchStreakMissing && !streamer.Stream.WatchStreakMissing {
+		streamer.CompletedWatchStreak = true
+	}
+	segmentRolled := (prevBroadcastID != "" && streamer.Stream.BroadcastID != "" && prevBroadcastID != streamer.Stream.BroadcastID) ||
+		(!prevCreatedAt.IsZero() && !streamer.Stream.CreatedAt.IsZero() && !prevCreatedAt.Equal(streamer.Stream.CreatedAt))
+	if segmentRolled && streamer.CompletedWatchStreak {
+		activateResolvedStreakCarryover(streamer, time.Now())
+		streamer.CompletedWatchStreak = false
+	}
+	applyResolvedStreakCarryover(streamer, time.Now())
 }
 
 func (m *Miner) activeStreakWatchKey(streamer *entities.Streamer) string {
@@ -1518,13 +1607,13 @@ func (m *Miner) updateHistory(streamer *entities.Streamer, reason string, amount
 	if reason == "WATCH" {
 		streamer.Stream.WatchCount++
 		if streamer.Stream.WatchStreakMissing && streamer.Stream.WatchCount >= 2 {
-			streamer.Stream.WatchStreakMissing = false
+			markActualStreakCompleted(streamer)
 		}
 		m.syncActiveStreakWatch(streamer, time.Now())
 		return
 	}
 	if reason == "WATCH_STREAK" {
-		streamer.Stream.WatchStreakMissing = false
+		markActualStreakCompleted(streamer)
 	}
 	m.syncActiveStreakWatch(streamer, time.Now())
 }
@@ -1536,16 +1625,24 @@ func (m *Miner) handlePubSubPresence(streamer *entities.Streamer, online bool, r
 func (m *Miner) setPresence(streamer *entities.Streamer, online bool, reason string) {
 	prevKnown := streamer.PresenceKnown
 	prevOnline := streamer.IsOnline
+	now := time.Now()
 	streamer.PresenceKnown = true
 	if online != prevOnline || !prevKnown {
 		if online {
-			streamer.OnlineAt = time.Now()
+			streamer.OnlineAt = now
 		} else {
-			streamer.OfflineAt = time.Now()
+			streamer.OfflineAt = now
+		}
+	}
+	if prevKnown && prevOnline != online {
+		if online {
+			restoreResolvedStreakCarryover(streamer, now)
+		} else {
+			rememberResolvedStreakCarryover(streamer)
 		}
 	}
 	streamer.IsOnline = online
-	m.syncActiveStreakWatch(streamer, time.Now())
+	m.syncActiveStreakWatch(streamer, now)
 	m.updateChatPresence(streamer, online)
 	if online && m.showGameInfo {
 		m.resolveGameName(streamer)
