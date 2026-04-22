@@ -97,21 +97,24 @@ type StreamerSettings struct {
 }
 
 type Streamer struct {
-	Username          string             `json:"username"`
-	ChannelID         string             `json:"channel_id"`
-	ChannelPoints     int                `json:"channel_points"`
-	Settings          StreamerSettings   `json:"settings"`
-	StreamerURL       string             `json:"-"`
-	IsOnline          bool               `json:"-"`
-	PresenceKnown     bool               `json:"-"`
-	OnlineAt          time.Time          `json:"-"`
-	OfflineAt         time.Time          `json:"-"`
-	Stream            *Stream            `json:"-"`
-	PointsInit        bool               `json:"-"`
-	ActiveMultipliers []ActiveMultiplier `json:"-"`
-	LastRaidID        string             `json:"-"`
-	History           map[string]*HistoryEntry
-	CommunityGoals    map[string]*CommunityGoal `json:"-"`
+	Username                     string             `json:"username"`
+	ChannelID                    string             `json:"channel_id"`
+	ChannelPoints                int                `json:"channel_points"`
+	Settings                     StreamerSettings   `json:"settings"`
+	StreamerURL                  string             `json:"-"`
+	IsOnline                     bool               `json:"-"`
+	PresenceKnown                bool               `json:"-"`
+	OnlineAt                     time.Time          `json:"-"`
+	OfflineAt                    time.Time          `json:"-"`
+	CompletedWatchStreak         bool               `json:"-"`
+	ResolvedStreakCarryover      bool               `json:"-"`
+	ResolvedStreakCarryoverUntil time.Time          `json:"-"`
+	Stream                       *Stream            `json:"-"`
+	PointsInit                   bool               `json:"-"`
+	ActiveMultipliers            []ActiveMultiplier `json:"-"`
+	LastRaidID                   string             `json:"-"`
+	History                      map[string]*HistoryEntry
+	CommunityGoals               map[string]*CommunityGoal `json:"-"`
 }
 
 type ActiveMultiplier struct {

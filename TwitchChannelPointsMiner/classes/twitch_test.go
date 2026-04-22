@@ -193,8 +193,37 @@ func TestUpdateStreamMarksWatchStreakCompleteFromRewardListMilestone(t *testing.
 	if streamer.Stream.WatchStreakMissing {
 		t.Fatalf("milestone should mark watch streak as complete")
 	}
+	if !streamer.CompletedWatchStreak {
+		t.Fatalf("milestone should preserve the actual completion signal")
+	}
 	if streamer.Stream.CreatedAt.IsZero() {
 		t.Fatalf("expected stream createdAt to be captured")
+	}
+}
+
+func TestUpdateStreamPreservesActualCompletionWhenWatchStreakAlreadyMasked(t *testing.T) {
+	twitch := newTestTwitch(t, func(operation string) (*http.Response, error) {
+		switch operation {
+		case "VideoPlayerStreamInfoOverlayChannel":
+			return jsonResponse(http.StatusOK, `{"data":{"user":{"stream":{"id":"broadcast-1","createdAt":"2026-03-01T10:00:00Z","viewersCount":42,"tags":[]},"broadcastSettings":{"title":"title","game":{}}}}}`), nil
+		case "RewardList":
+			return jsonResponse(http.StatusOK, `{"data":{"channel":{"self":{"watchStreakMilestone":{"watchStreakMilestone":{"achievementTimestamp":"2026-03-01T10:06:00Z"}}}}}}`), nil
+		default:
+			t.Fatalf("unexpected operation: %s", operation)
+			return nil, nil
+		}
+	})
+	streamer := newTestStreamer(true)
+	streamer.Stream.WatchStreakMissing = false
+
+	if err := twitch.UpdateStream(streamer); err != nil {
+		t.Fatalf("UpdateStream returned error: %v", err)
+	}
+	if streamer.Stream.WatchStreakMissing {
+		t.Fatalf("masked streak state should remain resolved")
+	}
+	if !streamer.CompletedWatchStreak {
+		t.Fatalf("masked streak state should still record the actual completion")
 	}
 }
 
