@@ -899,6 +899,84 @@ func TestPickStreamersToWatchReleasesResolvedActiveStreakSlot(t *testing.T) {
 	}
 }
 
+func TestPickStreamersToWatchKeepsSameGameStreakAheadOfFallback(t *testing.T) {
+	now := time.Now()
+	onlineAt := now.Add(-time.Minute)
+
+	active := testWatchSelectionStreakStreamer("active", "channel-active", "Just Chatting", onlineAt, 2.0)
+	sameGameStreak := testWatchSelectionStreakStreamer("same-game", "channel-same-game", "Just Chatting", onlineAt, 0)
+	fallback := &entities.Streamer{
+		Username: "fallback",
+		IsOnline: true,
+		OnlineAt: onlineAt,
+		Stream: &entities.Stream{
+			BroadcastID:        "fallback-broadcast",
+			Game:               map[string]interface{}{"displayName": "Different Game"},
+			WatchStreakMissing: false,
+			CreatedAt:          onlineAt,
+			StreamUpAt:         onlineAt,
+		},
+	}
+
+	m := &Miner{
+		watchPriorities: []watchPriority{watchPriorityStreak},
+	}
+
+	got := m.pickStreamersToWatch([]*entities.Streamer{active, sameGameStreak, fallback})
+	if len(got) != 2 {
+		t.Fatalf("expected 2 watchers got %d", len(got))
+	}
+	if got[0] != active || got[1] != sameGameStreak {
+		t.Fatalf("expected same-game streak to outrank fallback, got %s then %s", got[0].Username, got[1].Username)
+	}
+}
+
+func TestPickStreamersToWatchForceStreakSlotIgnoresGameDiversity(t *testing.T) {
+	now := time.Now()
+	onlineAt := now.Add(-time.Minute)
+
+	subscribed := &entities.Streamer{
+		Username: "subscribed",
+		IsOnline: true,
+		OnlineAt: onlineAt,
+		ActiveMultipliers: []entities.ActiveMultiplier{
+			{Factor: 1.2},
+		},
+		Stream: &entities.Stream{
+			BroadcastID:        "subscribed-broadcast",
+			Game:               map[string]interface{}{"displayName": "Just Chatting"},
+			WatchStreakMissing: false,
+			CreatedAt:          onlineAt,
+			StreamUpAt:         onlineAt,
+		},
+	}
+	sameGameStreak := testWatchSelectionStreakStreamer("same-game", "channel-same-game", "Just Chatting", onlineAt, 0)
+	fallback := &entities.Streamer{
+		Username: "fallback",
+		IsOnline: true,
+		OnlineAt: onlineAt,
+		Stream: &entities.Stream{
+			BroadcastID:        "fallback-broadcast",
+			Game:               map[string]interface{}{"displayName": "Different Game"},
+			WatchStreakMissing: false,
+			CreatedAt:          onlineAt,
+			StreamUpAt:         onlineAt,
+		},
+	}
+
+	m := &Miner{
+		watchPriorities: []watchPriority{watchPrioritySubscribed},
+	}
+
+	got := m.pickStreamersToWatch([]*entities.Streamer{subscribed, sameGameStreak, fallback})
+	if len(got) != 2 {
+		t.Fatalf("expected 2 watchers got %d", len(got))
+	}
+	if got[0] != subscribed || got[1] != sameGameStreak {
+		t.Fatalf("expected forced streak slot to outrank fallback, got %s then %s", got[0].Username, got[1].Username)
+	}
+}
+
 func TestSyncActiveStreakWatchTracksOnlyEligibleInProgressStreaks(t *testing.T) {
 	now := time.Now()
 	streamer := testWatchSelectionStreakStreamer("first", "channel-first", "casual game", now.Add(-time.Minute), 0)

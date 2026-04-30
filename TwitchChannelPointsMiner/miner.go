@@ -823,9 +823,9 @@ func (m *Miner) pickStreamersToWatch(streamers []*entities.Streamer) []*entities
 		}
 	}
 
-	pick := func(list []candidate, includeGameRank bool, less func(a, b candidate) bool, reason string) {
+	pick := func(list []candidate, includeGameRank bool, less func(a, b candidate) bool, reason string, force bool) {
 		for _, c := range sortCandidates(list, less, includeGameRank) {
-			add(c, reason, false)
+			add(c, reason, force)
 			if len(selected) >= maxConcurrentWatchers {
 				break
 			}
@@ -868,7 +868,7 @@ func (m *Miner) pickStreamersToWatch(streamers []*entities.Streamer) []*entities
 		}
 		switch priority {
 		case watchPriorityOrder:
-			pick(candidates, false, nil, "ORDER")
+			pick(candidates, false, nil, "ORDER", false)
 		case watchPriorityStreak:
 			if skipEarlyStreak {
 				continue
@@ -879,7 +879,7 @@ func (m *Miner) pickStreamersToWatch(streamers []*entities.Streamer) []*entities
 					streaks = append(streaks, c)
 				}
 			}
-			pick(streaks, true, nil, "STREAK")
+			pick(streaks, true, nil, "STREAK", true)
 		case watchPriorityDrops:
 			drops := make([]candidate, 0, len(candidates))
 			for _, c := range candidates {
@@ -892,7 +892,7 @@ func (m *Miner) pickStreamersToWatch(streamers []*entities.Streamer) []*entities
 					drops = append(drops, c)
 				}
 			}
-			pick(drops, true, nil, "DROPS")
+			pick(drops, true, nil, "DROPS", false)
 		case watchPrioritySubscribed:
 			subscribed := make([]candidate, 0, len(candidates))
 			for _, c := range candidates {
@@ -906,17 +906,17 @@ func (m *Miner) pickStreamersToWatch(streamers []*entities.Streamer) []*entities
 			}
 			pick(subscribed, true, func(a, b candidate) bool {
 				return streamers[a.idx].TotalMultiplier() > streamers[b.idx].TotalMultiplier()
-			}, "SUBSCRIBED")
+			}, "SUBSCRIBED", false)
 		case watchPriorityPointsAscending:
 			asc := append([]candidate(nil), candidates...)
 			pick(asc, true, func(a, b candidate) bool {
 				return streamers[a.idx].ChannelPoints < streamers[b.idx].ChannelPoints
-			}, "POINTS_ASC")
+			}, "POINTS_ASC", false)
 		case watchPriorityPointsDescending:
 			desc := append([]candidate(nil), candidates...)
 			pick(desc, true, func(a, b candidate) bool {
 				return streamers[a.idx].ChannelPoints > streamers[b.idx].ChannelPoints
-			}, "POINTS_DESC")
+			}, "POINTS_DESC", false)
 		}
 	}
 
@@ -938,7 +938,7 @@ func (m *Miner) pickStreamersToWatch(streamers []*entities.Streamer) []*entities
 		}
 		if streakPick != nil {
 			if len(selected) < maxConcurrentWatchers {
-				add(*streakPick, "FORCE_STREAK_SLOT2", false)
+				add(*streakPick, "FORCE_STREAK_SLOT2", true)
 			} else {
 				keepIdx := selected[0]
 				selected = selected[:0]
@@ -970,7 +970,7 @@ func (m *Miner) pickStreamersToWatch(streamers []*entities.Streamer) []*entities
 	}
 
 	if len(selected) < maxConcurrentWatchers {
-		pick(candidates, true, nil, "FALLBACK")
+		pick(candidates, true, nil, "FALLBACK", false)
 	}
 
 	watchList := make([]*entities.Streamer, 0, len(selected))
