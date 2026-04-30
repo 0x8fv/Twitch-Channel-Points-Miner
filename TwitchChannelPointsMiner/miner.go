@@ -32,6 +32,7 @@ const (
 const (
 	streakPriorityMinutesBase     = 7.0
 	streakPriorityMinutesExtended = 20.0
+	resolvedStreakCarryoverWindow = 30 * time.Minute
 )
 
 type activeStreakWatch struct {
@@ -1050,18 +1051,26 @@ func (m *Miner) shouldPrioritizeStreak(streamer *entities.Streamer, now time.Tim
 	return streamer.Stream.MinuteWatched < m.streakPriorityLimit(now)
 }
 
-func rememberResolvedStreakCarryover(streamer *entities.Streamer) {
+func resolvedStreakCarryoverExpiry(streamer *entities.Streamer, now time.Time) time.Time {
+	if now.IsZero() {
+		now = time.Now()
+	}
+	base := now
+	if streamer != nil && !streamer.OfflineAt.IsZero() && !streamer.OfflineAt.After(now) && now.Sub(streamer.OfflineAt) <= resolvedStreakCarryoverWindow {
+		base = streamer.OfflineAt
+	}
+	return base.Add(resolvedStreakCarryoverWindow)
+}
+
+func rememberResolvedStreakCarryover(streamer *entities.Streamer, now time.Time) {
 	if streamer == nil {
 		return
 	}
-	now := time.Now()
-	if streamer.CompletedWatchStreak {
-		streamer.ResolvedStreakCarryover = true
-		streamer.ResolvedStreakCarryoverUntil = now.Add(30 * time.Minute)
-		streamer.CompletedWatchStreak = false
-		return
+	if now.IsZero() {
+		now = time.Now()
 	}
-	if activeResolvedStreakCarryover(streamer, now) {
+	if streamer.CompletedWatchStreak || activeResolvedStreakCarryover(streamer, now) {
+		activateResolvedStreakCarryover(streamer, now)
 		return
 	}
 	streamer.ResolvedStreakCarryover = false
@@ -1078,6 +1087,7 @@ func restoreResolvedStreakCarryover(streamer *entities.Streamer, now time.Time) 
 		streamer.CompletedWatchStreak = false
 		return
 	}
+	streamer.CompletedWatchStreak = true
 	applyResolvedStreakCarryover(streamer, now)
 }
 
@@ -1105,7 +1115,7 @@ func activateResolvedStreakCarryover(streamer *entities.Streamer, now time.Time)
 		return
 	}
 	streamer.ResolvedStreakCarryover = true
-	streamer.ResolvedStreakCarryoverUntil = now.Add(30 * time.Minute)
+	streamer.ResolvedStreakCarryoverUntil = resolvedStreakCarryoverExpiry(streamer, now)
 }
 
 func markActualStreakCompleted(streamer *entities.Streamer) {
@@ -1127,11 +1137,11 @@ func (m *Miner) syncResolvedStreakState(streamer *entities.Streamer, prevBroadca
 	}
 	segmentRolled := (prevBroadcastID != "" && streamer.Stream.BroadcastID != "" && prevBroadcastID != streamer.Stream.BroadcastID) ||
 		(!prevCreatedAt.IsZero() && !streamer.Stream.CreatedAt.IsZero() && !prevCreatedAt.Equal(streamer.Stream.CreatedAt))
+	now := time.Now()
 	if segmentRolled && streamer.CompletedWatchStreak {
-		activateResolvedStreakCarryover(streamer, time.Now())
-		streamer.CompletedWatchStreak = false
+		activateResolvedStreakCarryover(streamer, now)
 	}
-	applyResolvedStreakCarryover(streamer, time.Now())
+	applyResolvedStreakCarryover(streamer, now)
 }
 
 func (m *Miner) activeStreakWatchKey(streamer *entities.Streamer) string {
@@ -1638,7 +1648,7 @@ func (m *Miner) setPresence(streamer *entities.Streamer, online bool, reason str
 		if online {
 			restoreResolvedStreakCarryover(streamer, now)
 		} else {
-			rememberResolvedStreakCarryover(streamer)
+			rememberResolvedStreakCarryover(streamer, now)
 		}
 	}
 	streamer.IsOnline = online
