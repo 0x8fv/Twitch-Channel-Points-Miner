@@ -481,6 +481,17 @@ func extractWatchStreakAchievementAt(resp *gqlRewardListResponse) time.Time {
 	return parseRFC3339Timestamp(milestone.WatchStreakMilestone.AchievementTimestamp)
 }
 
+func extractWatchStreakExpiresAt(resp *gqlRewardListResponse) time.Time {
+	if resp == nil || resp.Data.Channel == nil || resp.Data.Channel.Self == nil {
+		return time.Time{}
+	}
+	milestone := resp.Data.Channel.Self.WatchStreakMilestone
+	if milestone == nil {
+		return time.Time{}
+	}
+	return parseRFC3339Timestamp(milestone.ExpiresAt)
+}
+
 func extractWatchStreakLength(resp *gqlRewardListResponse) int {
 	if resp == nil || resp.Data.Channel == nil || resp.Data.Channel.Self == nil {
 		return -1
