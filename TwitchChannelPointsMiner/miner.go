@@ -832,6 +832,7 @@ func (m *Miner) pickStreamersToWatch(streamers []*entities.Streamer) []*entities
 		}
 	}
 
+	m.activeStreakMu.Lock()
 	if len(m.activeStreakWatches) > 0 {
 		activeStreaks := make([]candidate, 0, len(m.activeStreakWatches))
 		for _, c := range candidates {
@@ -845,9 +846,7 @@ func (m *Miner) pickStreamersToWatch(streamers []*entities.Streamer) []*entities
 				continue
 			}
 			if !m.shouldKeepActiveStreak(s, now) || !activeStreakWatchMatches(s, watch) {
-				m.activeStreakMu.Lock()
 				delete(m.activeStreakWatches, key)
-				m.activeStreakMu.Unlock()
 				continue
 			}
 			activeStreaks = append(activeStreaks, c)
@@ -859,6 +858,7 @@ func (m *Miner) pickStreamersToWatch(streamers []*entities.Streamer) []*entities
 			}
 		}
 	}
+	m.activeStreakMu.Unlock()
 
 	skipEarlyStreak := len(m.gamePriority) > 0 && !hasPriorityGameStreak
 
@@ -1173,11 +1173,11 @@ func (m *Miner) syncActiveStreakWatch(streamer *entities.Streamer, now time.Time
 		return
 	}
 	if !m.shouldKeepActiveStreak(streamer, now) {
+		m.activeStreakMu.Lock()
 		if m.activeStreakWatches != nil {
-			m.activeStreakMu.Lock()
 			delete(m.activeStreakWatches, key)
-			m.activeStreakMu.Unlock()
 		}
+		m.activeStreakMu.Unlock()
 		return
 	}
 	m.activeStreakMu.Lock()
