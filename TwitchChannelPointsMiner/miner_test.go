@@ -159,6 +159,54 @@ func TestShouldPrioritizeStreakAllowsRestartedStreamWithinOfflineCooldown(t *tes
 	}
 }
 
+func TestShouldPrioritizeStreakAllowsStreamStartedJustBeforeFalseOffline(t *testing.T) {
+	now := time.Now()
+	offlineAt := now.Add(-10 * time.Minute)
+	streamStartedAt := offlineAt.Add(-20 * time.Second)
+
+	m := &Miner{}
+	streamer := &entities.Streamer{
+		Settings: entities.StreamerSettings{
+			WatchStreak: true,
+		},
+		OfflineAt: offlineAt,
+		Stream: &entities.Stream{
+			WatchStreakMissing: true,
+			MinuteWatched:      3,
+			StreamUpAt:         streamStartedAt,
+			CreatedAt:          streamStartedAt,
+		},
+	}
+
+	if !m.shouldPrioritizeStreak(streamer, now) {
+		t.Fatalf("stream started just before a false offline event should regain streak priority")
+	}
+}
+
+func TestShouldPrioritizeStreakBlocksStreamStartedWellBeforeRecentOffline(t *testing.T) {
+	now := time.Now()
+	offlineAt := now.Add(-10 * time.Minute)
+	streamStartedAt := offlineAt.Add(-5 * time.Minute)
+
+	m := &Miner{}
+	streamer := &entities.Streamer{
+		Settings: entities.StreamerSettings{
+			WatchStreak: true,
+		},
+		OfflineAt: offlineAt,
+		Stream: &entities.Stream{
+			WatchStreakMissing: true,
+			MinuteWatched:      3,
+			StreamUpAt:         streamStartedAt,
+			CreatedAt:          streamStartedAt,
+		},
+	}
+
+	if m.shouldPrioritizeStreak(streamer, now) {
+		t.Fatalf("stream started well before a recent offline event should stay blocked by cooldown")
+	}
+}
+
 func TestResolvedStreakShortRestartDoesNotPrioritizeStreak(t *testing.T) {
 	now := time.Now()
 	m := &Miner{logger: discardLogger()}
@@ -837,6 +885,56 @@ func TestPickStreamersToWatchPrioritizesRestartedStreakCandidate(t *testing.T) {
 	}
 	if got[0] != restarted {
 		t.Fatalf("expected restarted streak candidate to take the first slot, got %s", got[0].Username)
+	}
+	if got[1] != first {
+		t.Fatalf("expected the next order candidate to fill slot two, got %s", got[1].Username)
+	}
+}
+
+func TestPickStreamersToWatchPrioritizesStreamStartedJustBeforeFalseOffline(t *testing.T) {
+	now := time.Now()
+	onlineAt := now.Add(-time.Minute)
+	offlineAt := now.Add(-10 * time.Minute)
+	streamStartedAt := offlineAt.Add(-20 * time.Second)
+
+	first := &entities.Streamer{
+		Username:      "first",
+		IsOnline:      true,
+		OnlineAt:      onlineAt,
+		ChannelPoints: 100,
+	}
+	second := &entities.Streamer{
+		Username:      "second",
+		IsOnline:      true,
+		OnlineAt:      onlineAt,
+		ChannelPoints: 200,
+	}
+	restarted := &entities.Streamer{
+		Username:  "restarted",
+		IsOnline:  true,
+		OnlineAt:  onlineAt,
+		OfflineAt: offlineAt,
+		Settings: entities.StreamerSettings{
+			WatchStreak: true,
+		},
+		Stream: &entities.Stream{
+			WatchStreakMissing: true,
+			MinuteWatched:      3,
+			StreamUpAt:         streamStartedAt,
+			CreatedAt:          streamStartedAt,
+		},
+	}
+
+	m := &Miner{
+		watchPriorities: defaultWatchPriorities(),
+	}
+
+	got := m.pickStreamersToWatch([]*entities.Streamer{first, second, restarted})
+	if len(got) != 2 {
+		t.Fatalf("expected 2 watchers got %d", len(got))
+	}
+	if got[0] != restarted {
+		t.Fatalf("expected false-offline restarted streak candidate to take the first slot, got %s", got[0].Username)
 	}
 	if got[1] != first {
 		t.Fatalf("expected the next order candidate to fill slot two, got %s", got[1].Username)
