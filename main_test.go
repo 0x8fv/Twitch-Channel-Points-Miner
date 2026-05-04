@@ -15,6 +15,7 @@ func TestDefaultConfigIncludesExpectedKeys(t *testing.T) {
 	required := []string{
 		"username",
 		"password",
+		"claim_moments",
 		"streamers",
 		"game_priority",
 		"chat_presence",
@@ -94,6 +95,22 @@ func TestBuildBaseStreamerSettingsAppliesGlobalFilterCondition(t *testing.T) {
 	}
 }
 
+func TestBuildBaseStreamerSettingsUsesGlobalClaimMoments(t *testing.T) {
+	cfg := config{
+		BettingMakePredictions: true,
+		FollowRaid:             true,
+		ClaimDrops:             true,
+		ClaimMoments:           false,
+		CommunityGoals:         false,
+		IRCMode:                "ONLINE",
+	}
+
+	base := buildBaseStreamerSettings(cfg)
+	if base.ClaimMoments {
+		t.Fatalf("expected base claim_moments false from global config")
+	}
+}
+
 func TestBuildOverrideSettingsMergesFilterCondition(t *testing.T) {
 	base := entities.StreamerSettings{
 		MakePredictions: true,
@@ -128,5 +145,28 @@ func TestBuildOverrideSettingsMergesFilterCondition(t *testing.T) {
 	}
 	if override.Bet.FilterCondition.Value == nil || *override.Bet.FilterCondition.Value != 999999.0 {
 		t.Fatalf("expected override Value 999999, got %#v", override.Bet.FilterCondition.Value)
+	}
+}
+
+func TestBuildOverrideSettingsCanEnableClaimMomentsOverGlobalDefault(t *testing.T) {
+	base := entities.StreamerSettings{
+		ClaimMoments: false,
+	}
+	base.Default()
+
+	enable := true
+	overrides := map[string]streamerSettingsConfig{
+		"SomeStreamer": {
+			ClaimMoments: &enable,
+		},
+	}
+
+	merged := buildOverrideSettings(base, overrides)
+	got, ok := merged["somestreamer"]
+	if !ok {
+		t.Fatalf("expected override for somestreamer")
+	}
+	if !got.ClaimMoments {
+		t.Fatalf("expected streamer override to enable claim_moments")
 	}
 }

@@ -38,6 +38,7 @@ When running a prebuilt binary, the miner uses `./config.json` if it exists in t
 - `disable_ssl_cert_verification`: Disables TLS certificate/hostname verification for PubSub WebSockets only; leave `false` unless you know you need it.
 - `timezone`: Optional IANA timezone name (e.g. `Europe/Berlin`) to override auto-detection for environments like Android/Termux; leave `null`/empty to auto-detect.
 - `claim_drops_startup`, `claim_drops`, `follow_raid`: Auto-claim drops at boot, continue claiming while running, and auto-follow raid targets.
+- `claim_moments`: Global default for listening to and claiming Twitch Moments via PubSub (`community-moments-channel-v1`). Per-streamer `streamer_overrides.<name>.claim_moments` still takes precedence.
 - `betting(make_predictions)`: Enable Twitch prediction betting.
 - `watch_streak_warm_start_cache`: When `true` (default), reuse recent watch-streak state for the same still-live stream across restarts to avoid re-probing every online channel at startup. The miner stores this account-scoped cache at `log/watch_streak_cache.<username>.json`.
 - `disable_at_in_nickname`: When `true`, `CHAT_MENTION` also triggers on plain username mentions in chat (without requiring `@username`), matching the Python miner behavior.

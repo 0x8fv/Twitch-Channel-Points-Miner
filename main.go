@@ -178,6 +178,7 @@ type config struct {
 	ShowSeconds                bool   `json:"show_seconds"`
 	ClaimDropsStartup          bool   `json:"claim_drops_startup"`
 	ClaimDrops                 bool   `json:"claim_drops"`
+	ClaimMoments               bool   `json:"claim_moments"`
 	BettingMakePredictions     bool   `json:"betting(make_predictions)"`
 	FollowRaid                 bool   `json:"follow_raid"`
 	CommunityGoals             bool   `json:"community_goals"`
@@ -341,6 +342,7 @@ func defaultConfig() map[string]interface{} {
 		"show_seconds":                  false,
 		"claim_drops_startup":           true,
 		"claim_drops":                   true,
+		"claim_moments":                 true,
 		"betting(make_predictions)":     true,
 		"follow_raid":                   true,
 		"community_goals":               false,
@@ -518,7 +520,7 @@ func buildBaseStreamerSettings(cfg config) entities.StreamerSettings {
 		MakePredictions: cfg.BettingMakePredictions,
 		FollowRaid:      cfg.FollowRaid,
 		ClaimDrops:      cfg.ClaimDrops,
-		ClaimMoments:    true,
+		ClaimMoments:    cfg.ClaimMoments,
 		WatchStreak:     true,
 		CommunityGoals:  cfg.CommunityGoals,
 		Bet:             betSettings,
