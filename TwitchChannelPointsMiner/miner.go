@@ -33,6 +33,7 @@ const (
 	streakPriorityMinutesBase     = 7.0
 	streakPriorityMinutesExtended = 20.0
 	resolvedStreakCarryoverWindow = 30 * time.Minute
+	falseOfflineStreamStartGrace  = 2 * time.Minute
 )
 
 type activeStreakWatch struct {
@@ -1028,13 +1029,23 @@ func (m *Miner) streakCooldownBlocksCurrentStream(streamer *entities.Streamer, n
 	if streamer.Stream == nil {
 		return true
 	}
-	if !streamer.Stream.StreamUpAt.IsZero() && streamer.Stream.StreamUpAt.After(streamer.OfflineAt) {
+	if streamStartSurvivesRecentOffline(streamer.Stream.StreamUpAt, streamer.OfflineAt) {
 		return false
 	}
-	if !streamer.Stream.CreatedAt.IsZero() && streamer.Stream.CreatedAt.After(streamer.OfflineAt) {
+	if streamStartSurvivesRecentOffline(streamer.Stream.CreatedAt, streamer.OfflineAt) {
 		return false
 	}
 	return true
+}
+
+func streamStartSurvivesRecentOffline(start, offlineAt time.Time) bool {
+	if start.IsZero() || offlineAt.IsZero() {
+		return false
+	}
+	if !start.Before(offlineAt) {
+		return true
+	}
+	return offlineAt.Sub(start) <= falseOfflineStreamStartGrace
 }
 
 func (m *Miner) shouldPrioritizeStreak(streamer *entities.Streamer, now time.Time) bool {
