@@ -1612,6 +1612,7 @@ func (m *Miner) updateHistory(streamer *entities.Streamer, reason string, amount
 	if reason == "" {
 		return
 	}
+	streamer.HistoryMu.Lock()
 	if streamer.History == nil {
 		streamer.History = make(map[string]*entities.HistoryEntry)
 	}
@@ -1622,6 +1623,7 @@ func (m *Miner) updateHistory(streamer *entities.Streamer, reason string, amount
 	}
 	entry.Count++
 	entry.Amount += amount
+	streamer.HistoryMu.Unlock()
 	if streamer.Stream == nil {
 		return
 	}
