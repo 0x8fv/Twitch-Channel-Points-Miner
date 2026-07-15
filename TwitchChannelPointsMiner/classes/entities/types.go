@@ -1,6 +1,9 @@
 package entities
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 type FollowersOrder string
 
@@ -114,6 +117,7 @@ type Streamer struct {
 	ActiveMultipliers            []ActiveMultiplier `json:"-"`
 	LastRaidID                   string             `json:"-"`
 	History                      map[string]*HistoryEntry
+	HistoryMu                    sync.Mutex
 	CommunityGoals               map[string]*CommunityGoal `json:"-"`
 }
 
