@@ -96,6 +96,8 @@ var GQLOperations = struct {
 	ChannelFollows                         GQLPersistedOperation
 	UserPointsContribution                 GQLPersistedOperation
 	ContributeCommunityPointsCommunityGoal GQLPersistedOperation
+	ClipsCardsUser                         GQLPersistedOperation
+	FilterableVideoTowerVideos             GQLPersistedOperation
 }{
 	URL:                          "https://gql.twitch.tv/gql",
 	IntegrityURL:                 "https://gql.twitch.tv/integrity",
@@ -136,6 +138,14 @@ var GQLOperations = struct {
 	}),
 	UserPointsContribution:                 newPersistedOperation("UserPointsContribution", "23ff2c2d60708379131178742327ead913b93b1bd6f665517a6d9085b73f661f", nil),
 	ContributeCommunityPointsCommunityGoal: newPersistedOperation("ContributeCommunityPointsCommunityGoal", "5774f0ea5d89587d73021a2e03c3c44777d903840c608754a1be519f51e37bb6", nil),
+	ClipsCardsUser: newPersistedOperation("ClipsCards__User", "1cd671bfa12cec480499c087319f26d21925e9695d1f80225aae6a4354f23088", map[string]interface{}{
+		"limit":    20,
+		"criteria": map[string]interface{}{"filter": "ALL_TIME"},
+	}),
+	FilterableVideoTowerVideos: newPersistedOperation("FilterableVideoTower_Videos", "67004f7881e65c297936f32c75246470629557a393788fb5a69d6d9a25a8fd5f", map[string]interface{}{
+		"limit":     20,
+		"videoSort": "TIME",
+	}),
 }
 
 func newPersistedOperation(name, hash string, variables map[string]interface{}) GQLPersistedOperation {
