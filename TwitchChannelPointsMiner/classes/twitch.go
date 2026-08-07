@@ -1222,18 +1222,18 @@ func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 		rewardlistop.Variables = map[string]interface{}{}
 	}
 	rewardlistop.Variables["channelID"] = streamer.ChannelID
-	var rewardlistresp gqlRewardListResponse
-	if err := t.PostGQLDecode(rewardlistop, &rewardlistresp); err != nil {
+	var resp0 gqlRewardListResponse
+	if err := t.PostGQLDecode(rewardlistop, &resp0); err != nil {
 		return false, fmt.Errorf("RewardList lookup failed for channel %s: %v", streamer.ChannelID, err)
 	}
-	if &rewardlistresp == nil || rewardlistresp.Data.Channel == nil || rewardlistresp.Data.Channel.Self == nil {
+	if &resp0 == nil || resp0.Data.Channel == nil || resp0.Data.Channel.Self == nil {
 		return false, fmt.Errorf("RewardList response does not have data.channel.self for channel %s", streamer.ChannelID)
 	}
-	if expiresAt := extractWatchStreakExpiresAt(&rewardlistresp); expiresAt.IsZero() {
+	if expiresAt := extractWatchStreakExpiresAt(&resp0); expiresAt.IsZero() {
 		// streak not expiring ... or some missing data in getting expiresAt
 		return false, nil
 	}
-	milestone := rewardlistresp.Data.Channel.Self.WatchStreakMilestone
+	milestone := resp0.Data.Channel.Self.WatchStreakMilestone
 	if milestone == nil || milestone.MissedStreams == nil {
 		return false, fmt.Errorf("RewardList response does not have missedStreams for channel %s", streamer.ChannelID)
 	}
@@ -1298,6 +1298,7 @@ func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 						url, _ := node["url"].(string)
 						clipid, _ := node["id"].(string)
 						slug, _ := node["slug"].(string)
+						createdAt, _ := node["createdAt"].(string)
 						playsessionid := randomString(32)
 						eventProps := map[string]interface{}{
 							"location":        "vod",
@@ -1321,7 +1322,7 @@ func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 							},
 						}
 						if t.logger != nil {
-							t.logger.Printf("Watching clip %s", url)
+							t.logger.Printf("streak recovery %s: watching clip %s from %s", streamer.Username, slug, parseRFC3339Timestamp(createdAt).Local())
 						}
 						if err := t.sendSpadePayload(spadeurl, streamer.Username, payload); err != nil {
 							return false, fmt.Errorf("video-play post failed for channel %s: %v", streamer.ChannelID, err)
@@ -1336,13 +1337,14 @@ func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 							return false, fmt.Errorf("n_second_play post failed for channel %s: %v", streamer.ChannelID, err)
 						}
 
-						if err := t.PostGQLDecode(rewardlistop, &rewardlistresp); err != nil {
+						var resp1 gqlRewardListResponse
+						if err := t.PostGQLDecode(rewardlistop, &resp1); err != nil {
 							return false, fmt.Errorf("RewardList lookup failed for channel %s: %v", streamer.ChannelID, err)
 						}
-						if &rewardlistresp == nil || rewardlistresp.Data.Channel == nil || rewardlistresp.Data.Channel.Self == nil {
+						if &resp1 == nil || resp1.Data.Channel == nil || resp1.Data.Channel.Self == nil {
 							return false, fmt.Errorf("RewardList response does not have data.channel.self for channel %s", streamer.ChannelID)
 						}
-						if expiresAt := extractWatchStreakExpiresAt(&rewardlistresp); expiresAt.IsZero() {
+						if expiresAt := extractWatchStreakExpiresAt(&resp1); expiresAt.IsZero() {
 							// streak not expiring ... or some missing data in getting expiresAt
 							return true, nil
 						}
@@ -1368,20 +1370,21 @@ func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 						}
 						for i := range 6 {
 							if t.logger != nil {
-								t.logger.Printf("Watching vod minute %d for %s from %s", i, streamer.Username, parseRFC3339Timestamp(publishedAt).Local())
+								t.logger.Printf("streak recovery %s: watching vod minute %d from %s", streamer.Username, i, parseRFC3339Timestamp(publishedAt).Local())
 							}
 							if err := t.sendSpadePayload(spadeurl, streamer.Username, payload); err != nil {
 								return false, fmt.Errorf("minute-watched post failed for channel %s: %v", streamer.ChannelID, err)
 							}
 							time.Sleep(60 * time.Second)
 
-							if err := t.PostGQLDecode(rewardlistop, &rewardlistresp); err != nil {
+							var resp1 gqlRewardListResponse
+							if err := t.PostGQLDecode(rewardlistop, &resp1); err != nil {
 								return false, fmt.Errorf("RewardList lookup failed for channel %s: %v", streamer.ChannelID, err)
 							}
-							if &rewardlistresp == nil || rewardlistresp.Data.Channel == nil || rewardlistresp.Data.Channel.Self == nil {
+							if &resp1 == nil || resp1.Data.Channel == nil || resp1.Data.Channel.Self == nil {
 								return false, fmt.Errorf("RewardList response does not have data.channel.self for channel %s", streamer.ChannelID)
 							}
-							if expiresAt := extractWatchStreakExpiresAt(&rewardlistresp); expiresAt.IsZero() {
+							if expiresAt := extractWatchStreakExpiresAt(&resp1); expiresAt.IsZero() {
 								// streak not expiring ... or some missing data in getting expiresAt
 								return true, nil
 							}
@@ -1399,17 +1402,19 @@ func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 		}
 	}
 
-	if err := t.PostGQLDecode(rewardlistop, &rewardlistresp); err != nil {
+	var resp2 gqlRewardListResponse
+	if err := t.PostGQLDecode(rewardlistop, &resp2); err != nil {
 		return false, fmt.Errorf("RewardList lookup failed for channel %s: %v", streamer.ChannelID, err)
 	}
-	if &rewardlistresp == nil || rewardlistresp.Data.Channel == nil || rewardlistresp.Data.Channel.Self == nil {
+	if &resp2 == nil || resp2.Data.Channel == nil || resp2.Data.Channel.Self == nil {
 		return false, fmt.Errorf("RewardList response does not have data.channel.self for channel %s", streamer.ChannelID)
 	}
-	if expiresAt := extractWatchStreakExpiresAt(&rewardlistresp); expiresAt.IsZero() {
+	expiresAt := extractWatchStreakExpiresAt(&resp2)
+	if expiresAt.IsZero() {
 		// streak not expiring ... or some missing data in getting expiresAt
 		return true, nil
 	}
-	return false, fmt.Errorf("no eligible clips or vods found to recover expiring streak")
+	return false, fmt.Errorf("no eligible clips or vods found to save streak expiring at %s", expiresAt.Local())
 }
 
 func operationLabel(payload interface{}, includeNote bool) string {
