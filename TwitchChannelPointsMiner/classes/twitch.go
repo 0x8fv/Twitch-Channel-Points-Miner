@@ -3,6 +3,7 @@ package classes
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -731,29 +732,23 @@ func (t *Twitch) GetSpadeURL(streamer *entities.Streamer) error {
 	return nil
 }
 
-func (t *Twitch) SendMinuteWatched(streamer *entities.Streamer) error {
-	if err := t.UpdateStream(streamer); err != nil {
-		return err
-	}
-	if streamer.Stream.SpadeURL == "" {
-		if err := t.GetSpadeURL(streamer); err != nil {
-			return err
-		}
-	}
-	streamer.Stream.UpdateMinuteWatched()
-	payload, err := streamer.Stream.EncodePayload()
+func (t *Twitch) sendSpadePayload(spadeurl string, username string, rawpayload []map[string]interface{}) error {
+	raw, err := json.Marshal(rawpayload)
 	if err != nil {
 		return err
 	}
+	payload := map[string]string{
+		"data": base64.StdEncoding.EncodeToString(raw),
+	}
 	form := url.Values{}
 	form.Set("data", payload["data"])
-	req, _ := http.NewRequest(http.MethodPost, streamer.Stream.SpadeURL, strings.NewReader(form.Encode()))
+	req, _ := http.NewRequest(http.MethodPost, spadeurl, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", t.userAgent)
 	if t.anonymizer != nil && t.anonymizer.Enabled() {
 		t.debugf("Send minute watched payload")
 	} else {
-		t.debugf("Send minute watched payload to %s (%s)", streamer.Username, streamer.Stream.SpadeURL)
+		t.debugf("Send minute watched payload to %s (%s)", username, spadeurl)
 	}
 	resp, err := t.client.Do(req)
 	if err != nil {
@@ -764,16 +759,32 @@ func (t *Twitch) SendMinuteWatched(streamer *entities.Streamer) error {
 	if t.anonymizer != nil && t.anonymizer.Enabled() {
 		t.debugf("Minute watched response: %d", resp.StatusCode)
 	} else {
-		t.debugf("Minute watched response for %s: %d %s", streamer.Username, resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
+		t.debugf("Minute watched response for %s: %d %s", username, resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
 	}
 	if resp.StatusCode == http.StatusNoContent {
-		streamer.Stream.UpdateMinuteWatched()
 		return nil
 	}
 	if t.anonymizer != nil && t.anonymizer.Enabled() {
 		return fmt.Errorf("minute watched failed: %d", resp.StatusCode)
 	}
 	return fmt.Errorf("minute watched failed: %d %s", resp.StatusCode, string(bodyBytes))
+}
+
+func (t *Twitch) SendMinuteWatched(streamer *entities.Streamer) error {
+	if err := t.UpdateStream(streamer); err != nil {
+		return err
+	}
+	if streamer.Stream.SpadeURL == "" {
+		if err := t.GetSpadeURL(streamer); err != nil {
+			return err
+		}
+	}
+	streamer.Stream.UpdateMinuteWatched()
+	err := t.sendSpadePayload(streamer.Stream.SpadeURL, streamer.Username, streamer.Stream.Payload)
+	if err == nil {
+		streamer.Stream.UpdateMinuteWatched()
+	}
+	return err
 }
 
 // ? ClaimBonus redeems the community points bonus.
