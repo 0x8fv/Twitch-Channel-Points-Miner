@@ -1395,7 +1395,7 @@ func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 			hasNext, _ = pageInfo["hasNextPage"].(bool)
 			if hasNext && len(edges) == 0 {
 				if t.logger != nil {
-					t.logger.Printf("empty %s edges but hasNextPage == true with cursor %s for %s", mode, op.Variables["cursor"], streamer.Username)
+					t.logger.Printf("streak recovery %s: empty %s edges but hasNextPage == true with cursor %s", streamer.Username, mode, op.Variables["cursor"])
 				}
 				hasNext = false
 			}
