@@ -391,6 +391,7 @@ func (m *Miner) run(streamers []string, useFollowers bool, order entities.Follow
 	go m.contextRefresher(streamerObjs, m.stop)
 	go m.minuteWatcher(streamerObjs, m.stop)
 	go m.startPubSub(streamerObjs, m.stop)
+	go m.streakRecovery(streamerObjs, m.stop)
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
@@ -445,6 +446,23 @@ func (m *Miner) contextRefresher(streamers []*entities.Streamer, stop <-chan str
 					m.handlePointsUpdate(s, prev, "")
 					// TODO: Fix Available Campaigns
 					// m.refreshCampaigns(s)
+				}
+			}
+		case <-stop:
+			return
+		}
+	}
+}
+
+func (m *Miner) streakRecovery(streamers []*entities.Streamer, stop <-chan struct{}) {
+	ticker := time.NewTicker(60 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			for _, s := range streamers {
+				if _, err := m.twitch.RecoverStreak(s); err != nil {
+					m.logger.Printf("streak recovery %s: %v", m.styledStreamerName(s), err)
 				}
 			}
 		case <-stop:
