@@ -1243,6 +1243,7 @@ func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 			missedstreamids = append(missedstreamids, id.ID)
 		}
 	}
+	length0 := extractWatchStreakLength(&resp0)
 
 	for _, filter := range []string{"LAST_DAY", "LAST_WEEK", "videos"} {
 		// check clips, last day first then last week (in case clips just over 24 hours old are from missed stream)
@@ -1346,7 +1347,8 @@ func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 						}
 						if expiresAt := extractWatchStreakExpiresAt(&resp1); expiresAt.IsZero() {
 							// streak not expiring ... or some missing data in getting expiresAt
-							return true, nil
+							length1 := extractWatchStreakLength(&resp1)
+							return length0 == length1, nil
 						}
 					} else {
 						// vod from a missed stream, eligible for saving streak, watch it
@@ -1386,7 +1388,8 @@ func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 							}
 							if expiresAt := extractWatchStreakExpiresAt(&resp1); expiresAt.IsZero() {
 								// streak not expiring ... or some missing data in getting expiresAt
-								return true, nil
+								length1 := extractWatchStreakLength(&resp1)
+								return length0 == length1, nil
 							}
 						}
 					}
@@ -1412,7 +1415,8 @@ func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 	expiresAt := extractWatchStreakExpiresAt(&resp2)
 	if expiresAt.IsZero() {
 		// streak not expiring ... or some missing data in getting expiresAt
-		return true, nil
+		length2 := extractWatchStreakLength(&resp2)
+		return length0 == length2, nil
 	}
 	return false, fmt.Errorf("no eligible clips or vods found to save streak expiring at %s", expiresAt.Local())
 }
