@@ -1213,9 +1213,21 @@ func (t *Twitch) inventory() map[string]interface{} {
 	return inv.(map[string]interface{})
 }
 
+func displayName(name string) string {
+	if name == "" {
+		return ""
+	}
+	return strings.ToUpper(name[:1]) + name[1:]
+}
+
 func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 	if streamer == nil || streamer.ChannelID == "" {
 		return false, fmt.Errorf("missing streamer channel id")
+	}
+	name := displayName(streamer.Username)
+	if t.anonymizer != nil && t.anonymizer.Enabled() {
+		// should ChannelID also be anonymized somehow?
+		name = t.anonymizer.StreamerName(streamer)
 	}
 	rewardlistop := constants.ClonePersistedOperation(constants.GQLOperations.RewardList)
 	if rewardlistop.Variables == nil {
@@ -1323,7 +1335,7 @@ func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 							},
 						}
 						if t.logger != nil {
-							t.logger.Printf("streak recovery %s: watching clip %s from %s", streamer.Username, slug, parseRFC3339Timestamp(createdAt).Local())
+							t.logger.Printf("streak recovery %s: watching clip %s from %s", name, slug, parseRFC3339Timestamp(createdAt).Local())
 						}
 						if err := t.sendSpadePayload(spadeurl, streamer.Username, payload); err != nil {
 							return false, fmt.Errorf("video-play post failed for channel %s: %v", streamer.ChannelID, err)
@@ -1372,7 +1384,7 @@ func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 						}
 						for i := range 6 {
 							if t.logger != nil {
-								t.logger.Printf("streak recovery %s: watching vod minute %d from %s", streamer.Username, i, parseRFC3339Timestamp(publishedAt).Local())
+								t.logger.Printf("streak recovery %s: watching vod minute %d from %s", name, i, parseRFC3339Timestamp(publishedAt).Local())
 							}
 							if err := t.sendSpadePayload(spadeurl, streamer.Username, payload); err != nil {
 								return false, fmt.Errorf("minute-watched post failed for channel %s: %v", streamer.ChannelID, err)
@@ -1398,7 +1410,7 @@ func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 			hasNext, _ = pageInfo["hasNextPage"].(bool)
 			if hasNext && len(edges) == 0 {
 				if t.logger != nil {
-					t.logger.Printf("streak recovery %s: empty %s edges but hasNextPage == true with cursor %s", streamer.Username, mode, op.Variables["cursor"])
+					t.logger.Printf("streak recovery %s: empty %s edges but hasNextPage == true with cursor %s", name, mode, op.Variables["cursor"])
 				}
 				hasNext = false
 			}
