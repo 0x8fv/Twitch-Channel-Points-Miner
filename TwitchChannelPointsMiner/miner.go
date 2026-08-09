@@ -460,7 +460,7 @@ func (m *Miner) streakRecovery(streamers []*entities.Streamer, stop <-chan struc
 	for {
 		for _, s := range streamers {
 			if _, err := m.twitch.RecoverStreak(s); err != nil {
-				m.logger.Printf("streak recovery %s: %v", m.styledStreamerName(s), err)
+				m.logger.EmojiPrintf(":ambulance:", "streak recovery %s: %v", m.styledStreamerName(s), err)
 			}
 		}
 

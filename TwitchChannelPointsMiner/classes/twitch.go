@@ -1335,7 +1335,7 @@ func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 							},
 						}
 						if t.logger != nil {
-							t.logger.Printf("streak recovery %s: watching clip %s from %s", name, slug, parseRFC3339Timestamp(createdAt).Local())
+							t.logger.EmojiPrintf(":ambulance:", "streak recovery %s: watching clip %s from %s", name, slug, parseRFC3339Timestamp(createdAt).Local())
 						}
 						if err := t.sendSpadePayload(spadeurl, streamer.Username, payload); err != nil {
 							return false, fmt.Errorf("video-play post failed for channel %s: %v", streamer.ChannelID, err)
@@ -1384,7 +1384,7 @@ func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 						}
 						for i := range 6 {
 							if t.logger != nil {
-								t.logger.Printf("streak recovery %s: watching vod minute %d from %s", name, i, parseRFC3339Timestamp(publishedAt).Local())
+								t.logger.EmojiPrintf(":ambulance:", "streak recovery %s: watching vod minute %d from %s", name, i, parseRFC3339Timestamp(publishedAt).Local())
 							}
 							if err := t.sendSpadePayload(spadeurl, streamer.Username, payload); err != nil {
 								return false, fmt.Errorf("minute-watched post failed for channel %s: %v", streamer.ChannelID, err)
@@ -1410,7 +1410,7 @@ func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 			hasNext, _ = pageInfo["hasNextPage"].(bool)
 			if hasNext && len(edges) == 0 {
 				if t.logger != nil {
-					t.logger.Printf("streak recovery %s: empty %s edges but hasNextPage == true with cursor %s", name, mode, op.Variables["cursor"])
+					t.logger.EmojiPrintf(":ambulance:", "streak recovery %s: empty %s edges but hasNextPage == true with cursor %s", name, mode, op.Variables["cursor"])
 				}
 				hasNext = false
 			}
