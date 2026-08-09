@@ -458,11 +458,20 @@ func (m *Miner) streakRecovery(streamers []*entities.Streamer, stop <-chan struc
 	ticker := time.NewTicker(60 * time.Minute)
 	defer ticker.Stop()
 	for {
+		expiringstreaks := 0
+		savedstreaks := 0
 		for _, s := range streamers {
-			if _, err := m.twitch.RecoverStreak(s); err != nil {
+			if saved, err := m.twitch.RecoverStreak(s); err == nil {
+				if saved {
+					expiringstreaks += 1
+					savedstreaks += 1
+				}
+			} else {
+				expiringstreaks += 1
 				m.logger.EmojiPrintf(":ambulance:", "streak recovery %s: %v", m.styledStreamerName(s), err)
 			}
 		}
+		m.logger.EmojiPrintf(":ambulance:", "streak recovery: %d streaks expiring, %d saved", expiringstreaks, savedstreaks)
 
 		select {
 		case <-ticker.C:
