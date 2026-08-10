@@ -1389,7 +1389,7 @@ func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 							if err := t.sendSpadePayload(spadeurl, streamer.Username, payload); err != nil {
 								return false, fmt.Errorf("minute-watched post failed for channel %s: %v", streamer.ChannelID, err)
 							}
-							time.Sleep(60 * time.Second)
+							time.Sleep(5 * time.Second)
 
 							var resp1 gqlRewardListResponse
 							if err := t.PostGQLDecode(rewardlistop, &resp1); err != nil {
@@ -1403,6 +1403,7 @@ func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 								length1 := extractWatchStreakLength(&resp1)
 								return length0 == length1, nil
 							}
+							time.Sleep(55 * time.Second)
 						}
 					}
 				}
