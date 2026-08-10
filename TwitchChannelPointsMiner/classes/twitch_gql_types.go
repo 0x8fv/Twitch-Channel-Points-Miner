@@ -42,7 +42,7 @@ type helixUsersResponse struct {
 	} `json:"data"`
 }
 
-type gqlTag struct {
+type gqlID struct {
 	ID string `json:"id"`
 }
 
@@ -56,10 +56,10 @@ type gqlStreamInfoOverlayResponse struct {
 	Data struct {
 		User *struct {
 			Stream *struct {
-				ID           string   `json:"id"`
-				CreatedAt    string   `json:"createdAt"`
-				ViewersCount int      `json:"viewersCount"`
-				Tags         []gqlTag `json:"tags"`
+				ID           string  `json:"id"`
+				CreatedAt    string  `json:"createdAt"`
+				ViewersCount int     `json:"viewersCount"`
+				Tags         []gqlID `json:"tags"`
 			} `json:"stream"`
 			BroadcastSettings *struct {
 				Title string   `json:"title"`
@@ -79,6 +79,10 @@ type gqlIsStreamLiveResponse struct {
 	} `json:"data"`
 }
 
+type gqlMissedStream struct {
+	BroadcastIdentifiers []gqlID `json:"broadcastIdentifiers"`
+}
+
 type gqlRewardListResponse struct {
 	Data struct {
 		Channel *struct {
@@ -88,7 +92,8 @@ type gqlRewardListResponse struct {
 						Value                string `json:"value"`
 						AchievementTimestamp string `json:"achievementTimestamp"`
 					} `json:"watchStreakMilestone"`
-					ExpiresAt string `json:"expiresAt"`
+					MissedStreams []gqlMissedStream `json:"missedStreams"`
+					ExpiresAt     string            `json:"expiresAt"`
 				} `json:"watchStreakMilestone"`
 			} `json:"self"`
 		} `json:"channel"`
@@ -112,7 +117,7 @@ func gameToInterfaceMap(game *gqlGame) map[string]interface{} {
 	return result
 }
 
-func tagsToInterfaceMaps(tags []gqlTag) []map[string]interface{} {
+func tagsToInterfaceMaps(tags []gqlID) []map[string]interface{} {
 	if len(tags) == 0 {
 		return nil
 	}
