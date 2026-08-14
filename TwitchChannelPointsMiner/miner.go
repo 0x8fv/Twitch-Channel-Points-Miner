@@ -162,16 +162,16 @@ type Miner struct {
 	chatMu                     sync.Mutex
 	disableAtInNickname        bool
 	showGameInfo               bool
+	showDropsProgress          bool
 	logWatchQueue              bool
 	anonymizer                 *privacy.Anonymizer
 	warmStartCache             *watchStreakWarmStartCache
 	warmStartCachePath         string
 	activeStreakWatches        map[string]activeStreakWatch
 	activeStreakMu             sync.Mutex
-	// showDropsIndicator         bool
 }
 
-func NewMiner(username, password string, claimDropsStartup bool, disableCertCheck bool, loggerSettings LoggerSettings, streamerSettings entities.StreamerSettings, streamerOverrides map[string]entities.StreamerSettings, priorityNames []string, streamerExclude []string, gamePriority []string, gameExclude []string, disableAtInNickname bool, showGameInfo bool, logWatchQueue bool, watchStreakWarmStartCache bool) *Miner {
+func NewMiner(username, password string, claimDropsStartup bool, disableCertCheck bool, loggerSettings LoggerSettings, streamerSettings entities.StreamerSettings, streamerOverrides map[string]entities.StreamerSettings, priorityNames []string, streamerExclude []string, gamePriority []string, gameExclude []string, disableAtInNickname bool, showGameInfo bool, logWatchQueue bool, watchStreakWarmStartCache bool, showDropsProgress bool) *Miner {
 	streamerSettings.Default()
 	priorityList := normalizeGameList(gamePriority)
 	excludedGames := make(map[string]struct{})
@@ -209,11 +209,11 @@ func NewMiner(username, password string, claimDropsStartup bool, disableCertChec
 		chatWatchers:               make(map[string]*classpkg.ChatClient),
 		disableAtInNickname:        disableAtInNickname,
 		showGameInfo:               showGameInfo,
+		showDropsProgress:          showDropsProgress,
 		logWatchQueue:              logWatchQueue,
 		anonymizer:                 privacy.New(loggerSettings.AnonymizeLogs),
 		warmStartCachePath:         warmStartCachePath,
 		activeStreakWatches:        make(map[string]activeStreakWatch),
-		// showDropsIndicator:         showDropsIndicator,
 	}
 }
 
@@ -532,11 +532,7 @@ func (m *Miner) run(streamers []string, useFollowers bool, order entities.Follow
 
 	claimDropsEnabled := m.shouldClaimDrops(streamerObjs)
 	if m.ClaimDropsStartup && claimDropsEnabled {
-		if drops, err := m.twitch.ClaimAllDropsFromInventory(); err != nil {
-			m.logger.Printf("startup drop claim failed: %v", err)
-		} else {
-			m.logClaimedDrops(drops)
-		}
+		m.claimDropsFromInventory("startup drop claim failed")
 	}
 
 	m.streamers = streamerObjs
@@ -561,15 +557,33 @@ func (m *Miner) dropClaimer(stop <-chan struct{}) {
 	for {
 		select {
 		case <-ticker.C:
-			if drops, err := m.twitch.ClaimAllDropsFromInventory(); err != nil {
-				m.logger.Printf("drop claim failed: %v", err)
-			} else {
-				m.logClaimedDrops(drops)
-			}
+			m.claimDropsFromInventory("drop claim failed")
 		case <-stop:
 			return
 		}
 	}
+}
+
+func (m *Miner) claimDropsFromInventory(errorPrefix string) {
+	if m == nil || m.twitch == nil {
+		return
+	}
+	if m.showDropsProgress {
+		drops, statuses, err := m.twitch.ClaimAllDropsFromInventoryWithStatuses()
+		if err != nil {
+			m.logger.Printf("%s: %v", errorPrefix, err)
+			return
+		}
+		m.logDropStatuses(statuses)
+		m.logClaimedDrops(drops)
+		return
+	}
+	drops, err := m.twitch.ClaimAllDropsFromInventory()
+	if err != nil {
+		m.logger.Printf("%s: %v", errorPrefix, err)
+		return
+	}
+	m.logClaimedDrops(drops)
 }
 
 func (m *Miner) logClaimedDrops(drops []classpkg.ClaimedDrop) {
@@ -585,6 +599,19 @@ func (m *Miner) logClaimedDrops(drops []classpkg.ClaimedDrop) {
 		progress := formatDropProgress(drop.CurrentValue, drop.RequiredValue)
 		percent := progressPercent(drop.CurrentValue, drop.RequiredValue)
 		m.logger.EmojiEventf(":package:", constants.EventDropClaim, "Claim %s (%s) %s (%d%%)", reward, campaign, progress, percent)
+	}
+}
+
+func (m *Miner) logDropStatuses(statuses []classpkg.DropStatus) {
+	if m == nil || m.logger == nil || !m.showDropsProgress {
+		return
+	}
+	for _, status := range statuses {
+		line := formatDropStatusLine(status)
+		if line == "" {
+			continue
+		}
+		m.logger.Eventf(constants.EventDropStatus, "%s", line)
 	}
 }
 
@@ -1630,6 +1657,101 @@ func formatDropProgress(current, required int) string {
 		return fmt.Sprintf("%d/%d", current, required)
 	}
 	return fmt.Sprintf("%d", current)
+}
+
+func formatDropProgressBar(current, required int) string {
+	const width = 20
+	percent := progressPercent(current, required)
+	if percent < 0 {
+		percent = 0
+	}
+	if percent > 100 {
+		percent = 100
+	}
+	filled := (percent * width) / 100
+	return "[" + strings.Repeat("#", filled) + strings.Repeat("-", width-filled) + "]"
+}
+
+func formatDropStatusLine(status classpkg.DropStatus) string {
+	reward := strings.TrimSpace(status.RewardName)
+	if reward == "" {
+		reward = "Drop"
+	}
+	campaign := strings.TrimSpace(status.CampaignName)
+	game := strings.TrimSpace(status.GameName)
+	if game == "" {
+		game = campaign
+	}
+	if campaign == "" {
+		campaign = "Unknown Campaign"
+	}
+	title := formatDropStatusTitle(game, campaign, reward)
+	channel := strings.TrimSpace(status.ChannelName)
+	if channel == "" {
+		channel = "unknown_streamer"
+	}
+
+	current := status.CurrentValue
+	required := status.RequiredValue
+	if current < 0 {
+		current = 0
+	}
+	remaining := 0
+	if required > current {
+		remaining = required - current
+	}
+	if required <= 0 {
+		return fmt.Sprintf(
+			"DROP_PROGRESS %s %d%% | %s / %s / %dm watched / %s",
+			formatDropProgressBar(current, required),
+			progressPercent(current, required),
+			title,
+			channel,
+			current,
+			dropStatusLabel(status),
+		)
+	}
+	return fmt.Sprintf(
+		"DROP_PROGRESS %s %d%% | %s / %s / %dm of %dm / remaining %dm / %s",
+		formatDropProgressBar(current, required),
+		progressPercent(current, required),
+		title,
+		channel,
+		current,
+		required,
+		remaining,
+		dropStatusLabel(status),
+	)
+}
+
+func formatDropStatusTitle(game, campaign, reward string) string {
+	parts := make([]string, 0, 3)
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		for _, existing := range parts {
+			if strings.EqualFold(existing, value) {
+				return
+			}
+		}
+		parts = append(parts, value)
+	}
+	add(game)
+	add(campaign)
+	add(reward)
+	return strings.Join(parts, " / ")
+}
+
+func dropStatusLabel(status classpkg.DropStatus) string {
+	if status.Claimed {
+		return "CLAIMED"
+	}
+	if status.Claimable || (status.RequiredValue > 0 && status.CurrentValue >= status.RequiredValue) {
+		return "CLAIMABLE"
+	}
+	return "IN_PROGRESS"
 }
 
 func progressPercent(current, required int) int {
