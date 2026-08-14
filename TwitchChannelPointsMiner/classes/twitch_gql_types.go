@@ -28,6 +28,20 @@ type gqlChannelPointsContextResponse struct {
 	} `json:"data"`
 }
 
+type TwitchUserIdentity struct {
+	ID          string
+	Login       string
+	DisplayName string
+}
+
+type helixUsersResponse struct {
+	Data []struct {
+		ID          string `json:"id"`
+		Login       string `json:"login"`
+		DisplayName string `json:"display_name"`
+	} `json:"data"`
+}
+
 type gqlTag struct {
 	ID string `json:"id"`
 }

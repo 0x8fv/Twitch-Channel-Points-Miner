@@ -25,7 +25,10 @@ import (
 	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/utils"
 )
 
-var ErrStreamerOffline = errors.New("streamer offline")
+var (
+	ErrStreamerOffline = errors.New("streamer offline")
+	ErrChannelNotFound = errors.New("channel not found")
+)
 
 type debugLogger interface {
 	Debugf(format string, args ...interface{})
@@ -106,6 +109,49 @@ func (t *Twitch) ChatToken() string {
 		return ""
 	}
 	return t.twitchLogin.AuthToken()
+}
+
+func (t *Twitch) GetUserByID(channelID string) (*TwitchUserIdentity, error) {
+	channelID = strings.TrimSpace(channelID)
+	if channelID == "" {
+		return nil, fmt.Errorf("missing channel id: %w", ErrChannelNotFound)
+	}
+	if t == nil || t.client == nil || t.twitchLogin == nil {
+		return nil, fmt.Errorf("missing twitch client")
+	}
+
+	endpoint := "https://api.twitch.tv/helix/users?id=" + url.QueryEscape(channelID)
+	req, _ := http.NewRequest(http.MethodGet, endpoint, nil)
+	req.Header.Set("Authorization", "Bearer "+t.twitchLogin.AuthToken())
+	req.Header.Set("Client-Id", constants.ClientID)
+	if t.userAgent != "" {
+		req.Header.Set("User-Agent", t.userAgent)
+	}
+
+	resp, err := t.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("helix user lookup failed: %d %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var out helixUsersResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	if len(out.Data) == 0 {
+		return nil, fmt.Errorf("channel id %s not found: %w", channelID, ErrChannelNotFound)
+	}
+
+	user := out.Data[0]
+	return &TwitchUserIdentity{
+		ID:          user.ID,
+		Login:       strings.ToLower(strings.TrimSpace(user.Login)),
+		DisplayName: strings.TrimSpace(user.DisplayName),
+	}, nil
 }
 
 func (t *Twitch) debugf(format string, args ...interface{}) {
@@ -336,7 +382,7 @@ func (t *Twitch) LoadChannelPointsContext(streamer *entities.Streamer) (int, err
 		if t.anonymizer != nil && t.anonymizer.Enabled() {
 			name = t.anonymizer.StreamerName(streamer)
 		}
-		return 0, fmt.Errorf("channel missing for %s", name)
+		return 0, fmt.Errorf("channel missing for %s: %w", name, ErrChannelNotFound)
 	}
 	pointsData := channel.Self.CommunityPoints
 	balance := pointsData.Balance
@@ -573,7 +619,7 @@ func (t *Twitch) streamInfoOverlay(username, channelID string) (*streamInfoResul
 		return nil, err
 	}
 	if resp.Data.User == nil {
-		return nil, fmt.Errorf("missing user data for %s", username)
+		return nil, fmt.Errorf("missing user data for %s: %w", username, ErrChannelNotFound)
 	}
 	if resp.Data.User.Stream == nil || resp.Data.User.BroadcastSettings == nil {
 		return nil, ErrStreamerOffline

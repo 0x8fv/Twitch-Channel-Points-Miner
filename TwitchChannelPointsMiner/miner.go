@@ -36,6 +36,12 @@ const (
 	falseOfflineStreamStartGrace  = 2 * time.Minute
 )
 
+const (
+	minuteWatchFailureBackoffThreshold = 3
+	minuteWatchFailureBackoffBase      = 5 * time.Minute
+	minuteWatchFailureBackoffMax       = 30 * time.Minute
+)
+
 type activeStreakWatch struct {
 	BroadcastID string
 	CreatedAt   time.Time
@@ -295,6 +301,157 @@ func (m *Miner) applyWarmStartCache(streamer *entities.Streamer) bool {
 	return true
 }
 
+func streamerInitialPointsKey(streamer *entities.Streamer) string {
+	if streamer == nil {
+		return ""
+	}
+	if id := strings.TrimSpace(streamer.ChannelID); id != "" {
+		return id
+	}
+	return strings.ToLower(strings.TrimSpace(streamer.Username))
+}
+
+func (m *Miner) applyStreamerLoginChange(streamer *entities.Streamer, login string) bool {
+	if streamer == nil {
+		return false
+	}
+	login = strings.ToLower(strings.TrimSpace(login))
+	if login == "" || strings.EqualFold(streamer.Username, login) {
+		return false
+	}
+
+	oldLogin := strings.ToLower(strings.TrimSpace(streamer.Username))
+	if m != nil {
+		m.stopChatWatcher(streamer)
+	}
+
+	streamer.Username = login
+	streamer.StreamerURL = fmt.Sprintf("%s/%s", constants.URL, login)
+	if streamer.Stream != nil {
+		streamer.Stream.SpadeURL = ""
+	}
+	if m != nil && m.logger != nil {
+		if m.anonymizeLogs() {
+			m.logger.Printf("identity refresh %s", m.styledStreamerName(streamer))
+		} else {
+			m.logger.Printf("identity refresh %s -> %s for channel %s", oldLogin, streamer.Username, streamer.ChannelID)
+		}
+	}
+
+	if m != nil && m.initialPoints != nil && oldLogin != "" {
+		stableKey := streamerInitialPointsKey(streamer)
+		if stableKey != "" {
+			if initial, ok := m.initialPoints[oldLogin]; ok {
+				m.initialPoints[stableKey] = initial
+			}
+		}
+	}
+	if m != nil {
+		m.updateChatPresence(streamer, streamer.IsOnline)
+		m.syncWarmStartCacheFromStreamer(streamer)
+	}
+	return true
+}
+
+func shouldRepairStreamerIdentity(err error) bool {
+	return errors.Is(err, classpkg.ErrChannelNotFound)
+}
+
+func (m *Miner) repairStreamerIdentity(streamer *entities.Streamer, err error) bool {
+	if m == nil || m.twitch == nil || streamer == nil || !shouldRepairStreamerIdentity(err) {
+		return false
+	}
+	user, lookupErr := m.twitch.GetUserByID(streamer.ChannelID)
+	if lookupErr != nil {
+		if m.logger != nil {
+			m.logger.Printf("identity refresh %s: %v", m.styledStreamerName(streamer), lookupErr)
+		}
+		return false
+	}
+	if user == nil || user.Login == "" {
+		return false
+	}
+	return m.applyStreamerLoginChange(streamer, user.Login)
+}
+
+func (m *Miner) loadChannelPointsContextWithIdentityRepair(streamer *entities.Streamer) (int, error) {
+	points, err := m.twitch.LoadChannelPointsContext(streamer)
+	if err == nil {
+		return points, nil
+	}
+	if !m.repairStreamerIdentity(streamer, err) {
+		return points, err
+	}
+	return m.twitch.LoadChannelPointsContext(streamer)
+}
+
+func (m *Miner) checkStreamerOnlineWithIdentityRepair(streamer *entities.Streamer) (bool, error) {
+	online, err := m.twitch.CheckStreamerOnline(streamer)
+	if err == nil {
+		return online, nil
+	}
+	if !m.repairStreamerIdentity(streamer, err) {
+		return online, err
+	}
+	return m.twitch.CheckStreamerOnline(streamer)
+}
+
+func (m *Miner) updateStreamWithIdentityRepair(streamer *entities.Streamer) error {
+	err := m.twitch.UpdateStream(streamer)
+	if err == nil {
+		return nil
+	}
+	if !m.repairStreamerIdentity(streamer, err) {
+		return err
+	}
+	return m.twitch.UpdateStream(streamer)
+}
+
+func (m *Miner) sendMinuteWatchedWithIdentityRepair(streamer *entities.Streamer) error {
+	err := m.twitch.SendMinuteWatched(streamer)
+	if err == nil {
+		return nil
+	}
+	if !m.repairStreamerIdentity(streamer, err) {
+		return err
+	}
+	return m.twitch.SendMinuteWatched(streamer)
+}
+
+func streamerWatchBackedOff(streamer *entities.Streamer, now time.Time) bool {
+	if streamer == nil || streamer.WatchBackoffUntil.IsZero() {
+		return false
+	}
+	return now.Before(streamer.WatchBackoffUntil)
+}
+
+func recordMinuteWatchFailure(streamer *entities.Streamer, now time.Time) {
+	if streamer == nil {
+		return
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	streamer.WatchFailureCount++
+	if streamer.WatchFailureCount < minuteWatchFailureBackoffThreshold {
+		return
+	}
+	multiplier := streamer.WatchFailureCount - minuteWatchFailureBackoffThreshold + 1
+	backoff := time.Duration(multiplier) * minuteWatchFailureBackoffBase
+	if backoff > minuteWatchFailureBackoffMax {
+		backoff = minuteWatchFailureBackoffMax
+	}
+	streamer.WatchBackoffUntil = now.Add(backoff)
+}
+
+func recordMinuteWatchSuccess(streamer *entities.Streamer) {
+	if streamer == nil {
+		return
+	}
+	streamer.WatchFailureCount = 0
+	streamer.WatchBackoffUntil = time.Time{}
+}
+
 func (m *Miner) run(streamers []string, useFollowers bool, order entities.FollowersOrder) {
 	m.startedAt = time.Now()
 	m.logger.Printf("Twitch Channel Points Miner | v%s", constants.Version)
@@ -358,14 +515,14 @@ func (m *Miner) run(streamers []string, useFollowers bool, order entities.Follow
 		}
 		s.ChannelID = id
 		prev := s.ChannelPoints
-		if _, err := m.twitch.LoadChannelPointsContext(s); err != nil {
+		if _, err := m.loadChannelPointsContextWithIdentityRepair(s); err != nil {
 			m.logger.Printf("context for %s: %v", m.rawStreamerName(name), err)
 		} else {
 			m.handlePointsUpdate(s, prev, "")
 		}
 		m.updatePresence(s)
 		streamerObjs = append(streamerObjs, s)
-		m.initialPoints[s.Username] = s.ChannelPoints
+		m.initialPoints[streamerInitialPointsKey(s)] = s.ChannelPoints
 	}
 	m.saveWarmStartCacheSnapshot(streamerObjs)
 
@@ -439,7 +596,7 @@ func (m *Miner) contextRefresher(streamers []*entities.Streamer, stop <-chan str
 		case <-ticker.C:
 			for _, s := range streamers {
 				prev := s.ChannelPoints
-				if _, err := m.twitch.LoadChannelPointsContext(s); err != nil {
+				if _, err := m.loadChannelPointsContextWithIdentityRepair(s); err != nil {
 					m.logger.Printf("refresh %s: %v", m.styledStreamerName(s), err)
 				} else {
 					m.handlePointsUpdate(s, prev, "")
@@ -478,7 +635,7 @@ func (m *Miner) minuteWatcher(streamers []*entities.Streamer, stop <-chan struct
 			}
 
 			if streamer.Stream != nil && streamer.Stream.LastUpdateAgo() > 10*time.Minute {
-				if _, err := m.twitch.CheckStreamerOnline(streamer); err != nil {
+				if _, err := m.checkStreamerOnlineWithIdentityRepair(streamer); err != nil {
 					m.logger.Printf("online check %s: %v", m.styledStreamerName(streamer), err)
 				}
 				if !streamer.IsOnline {
@@ -494,8 +651,10 @@ func (m *Miner) minuteWatcher(streamers []*entities.Streamer, stop <-chan struct
 				prevCreatedAt = streamer.Stream.CreatedAt
 				prevWatchStreakMissing = streamer.Stream.WatchStreakMissing
 			}
-			if err := m.twitch.SendMinuteWatched(streamer); err != nil {
+			if err := m.sendMinuteWatchedWithIdentityRepair(streamer); err != nil {
+				countWatchFailure := true
 				if errors.Is(err, classpkg.ErrStreamerOffline) {
+					countWatchFailure = false
 					live, liveErr := m.twitch.IsStreamLive(streamer.ChannelID)
 					if liveErr != nil {
 						m.logger.Printf("live check %s: %v", m.styledStreamerName(streamer), liveErr)
@@ -506,8 +665,16 @@ func (m *Miner) minuteWatcher(streamers []*entities.Streamer, stop <-chan struct
 						m.logger.Printf("minute watch %s: transient offline response, keeping online", m.styledStreamerName(streamer))
 					}
 				}
+				if countWatchFailure {
+					prevFailures := streamer.WatchFailureCount
+					recordMinuteWatchFailure(streamer, time.Now())
+					if m.logger != nil && prevFailures < minuteWatchFailureBackoffThreshold && streamer.WatchFailureCount >= minuteWatchFailureBackoffThreshold {
+						m.logger.Printf("minute watch %s: backing off until %s after repeated failures", m.styledStreamerName(streamer), streamer.WatchBackoffUntil.Format(time.RFC3339))
+					}
+				}
 				m.logger.Errorf("minute watch %s: %v", m.styledStreamerName(streamer), err)
 			} else {
+				recordMinuteWatchSuccess(streamer)
 				m.syncResolvedStreakState(streamer, prevBroadcastID, prevCreatedAt, prevWatchStreakMissing)
 				if streamer.Stream != nil && (prevBroadcastID != streamer.Stream.BroadcastID || !prevCreatedAt.Equal(streamer.Stream.CreatedAt) || prevWatchStreakMissing != streamer.Stream.WatchStreakMissing) {
 					m.syncWarmStartCacheFromStreamer(streamer)
@@ -539,7 +706,7 @@ func (m *Miner) refreshStreamForPreference(streamer *entities.Streamer) {
 		prevCreatedAt = streamer.Stream.CreatedAt
 		prevWatchStreakMissing = streamer.Stream.WatchStreakMissing
 	}
-	if err := m.twitch.UpdateStream(streamer); err != nil {
+	if err := m.updateStreamWithIdentityRepair(streamer); err != nil {
 		if errors.Is(err, classpkg.ErrStreamerOffline) {
 			m.setPresence(streamer, false, "stream-info")
 		} else {
@@ -573,7 +740,7 @@ func (m *Miner) resolveGameName(streamer *entities.Streamer) string {
 		prevCreatedAt = streamer.Stream.CreatedAt
 		prevWatchStreakMissing = streamer.Stream.WatchStreakMissing
 	}
-	if err := m.twitch.UpdateStream(streamer); err != nil {
+	if err := m.updateStreamWithIdentityRepair(streamer); err != nil {
 		if m.logger != nil && m.logger.DebugEnabled() {
 			m.logger.Debugf("update stream %s for game: %v", m.styledStreamerName(streamer), err)
 		}
@@ -723,6 +890,9 @@ func (m *Miner) pickStreamersToWatch(streamers []*entities.Streamer) []*entities
 	hasPriorityGameStreak := false
 	for idx, s := range streamers {
 		if s == nil || !s.IsOnline {
+			continue
+		}
+		if streamerWatchBackedOff(s, now) {
 			continue
 		}
 		if !s.OnlineAt.IsZero() && now.Sub(s.OnlineAt) < 30*time.Second {
@@ -1293,7 +1463,7 @@ func (m *Miner) shutdown(sessionID string) {
 	m.logger.EmojiPrintf(":hourglass:", "Duration %s", duration)
 	totalPointsChange := 0
 	for _, s := range m.streamers {
-		totalPointsChange += s.ChannelPoints - m.initialPoints[s.Username]
+		totalPointsChange += s.ChannelPoints - m.initialPoints[streamerInitialPointsKey(s)]
 	}
 	if m.anonymizeLogs() {
 		m.logger.EmojiPrintf(":chart_with_upwards_trend:", "Total Points gained: [hidden]")
@@ -1308,7 +1478,7 @@ func (m *Miner) shutdown(sessionID string) {
 		m.logger.EmojiPrintf(":chart_with_upwards_trend:", "Total Points gained: %s%s%d%s", totalColor, totalSign, totalPointsChange, colorReset)
 	}
 	for _, s := range m.streamers {
-		initial := m.initialPoints[s.Username]
+		initial := m.initialPoints[streamerInitialPointsKey(s)]
 		total := s.ChannelPoints - initial
 		if total == 0 && len(s.History) == 0 {
 			continue
@@ -1342,7 +1512,7 @@ func (m *Miner) shutdown(sessionID string) {
 }
 
 func (m *Miner) updatePresence(streamer *entities.Streamer) {
-	online, err := m.twitch.CheckStreamerOnline(streamer)
+	online, err := m.checkStreamerOnlineWithIdentityRepair(streamer)
 	if err != nil {
 		m.logger.Printf("online check %s: %v", m.styledStreamerName(streamer), err)
 		return

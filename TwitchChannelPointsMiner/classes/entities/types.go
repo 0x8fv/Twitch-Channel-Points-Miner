@@ -109,6 +109,8 @@ type Streamer struct {
 	CompletedWatchStreak         bool               `json:"-"`
 	ResolvedStreakCarryover      bool               `json:"-"`
 	ResolvedStreakCarryoverUntil time.Time          `json:"-"`
+	WatchFailureCount            int                `json:"-"`
+	WatchBackoffUntil            time.Time          `json:"-"`
 	Stream                       *Stream            `json:"-"`
 	PointsInit                   bool               `json:"-"`
 	ActiveMultipliers            []ActiveMultiplier `json:"-"`

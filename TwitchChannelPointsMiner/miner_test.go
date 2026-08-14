@@ -1,10 +1,13 @@
 package twitchchannelpointsminer
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	classpkg "TwitchChannelPointsMiner/TwitchChannelPointsMiner/classes"
 	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/classes/entities"
 )
 
@@ -1188,6 +1191,152 @@ func TestSyncActiveStreakWatchTracksOnlyEligibleInProgressStreaks(t *testing.T) 
 	m.syncActiveStreakWatch(streamer, now)
 	if _, ok := m.activeStreakWatches[streamer.ChannelID]; ok {
 		t.Fatalf("resolved streak should be removed from active tracking")
+	}
+}
+
+func TestStreamerInitialPointsKeyUsesChannelIDWhenAvailable(t *testing.T) {
+	streamer := &entities.Streamer{Username: "oldlogin", ChannelID: "123456"}
+
+	if got := streamerInitialPointsKey(streamer); got != "123456" {
+		t.Fatalf("key got %q want channel id", got)
+	}
+
+	streamer.ChannelID = ""
+	if got := streamerInitialPointsKey(streamer); got != "oldlogin" {
+		t.Fatalf("fallback key got %q want username", got)
+	}
+}
+
+func TestApplyStreamerLoginChangeMigratesMutableLoginState(t *testing.T) {
+	streamer := &entities.Streamer{
+		Username:      "oldlogin",
+		ChannelID:     "123456",
+		ChannelPoints: 250,
+		StreamerURL:   "https://www.twitch.tv/oldlogin",
+		Stream:        entities.NewStream(),
+	}
+	streamer.Stream.SpadeURL = "https://spade.example/old"
+
+	m := &Miner{
+		initialPoints: map[string]int{
+			"123456":   100,
+			"oldlogin": 100,
+		},
+		chatWatchers: make(map[string]*classpkg.ChatClient),
+	}
+
+	changed := m.applyStreamerLoginChange(streamer, "newlogin")
+	if !changed {
+		t.Fatalf("expected login change")
+	}
+	if streamer.Username != "newlogin" {
+		t.Fatalf("username got %q", streamer.Username)
+	}
+	if streamer.StreamerURL != "https://www.twitch.tv/newlogin" {
+		t.Fatalf("streamer url got %q", streamer.StreamerURL)
+	}
+	if streamer.Stream.SpadeURL != "" {
+		t.Fatalf("spade url should be cleared after login change")
+	}
+	if got := m.initialPoints["123456"]; got != 100 {
+		t.Fatalf("stable initial points got %d", got)
+	}
+}
+
+func TestShouldRepairStreamerIdentityOnlyForChannelNotFound(t *testing.T) {
+	if !shouldRepairStreamerIdentity(fmt.Errorf("wrapped: %w", classpkg.ErrChannelNotFound)) {
+		t.Fatalf("ErrChannelNotFound should trigger identity repair")
+	}
+	if shouldRepairStreamerIdentity(classpkg.ErrStreamerOffline) {
+		t.Fatalf("ErrStreamerOffline should not trigger identity repair")
+	}
+	if shouldRepairStreamerIdentity(errors.New("temporary network error")) {
+		t.Fatalf("generic errors should not trigger identity repair")
+	}
+}
+
+func TestRecordMinuteWatchFailureBacksOffAfterRepeatedFailures(t *testing.T) {
+	now := time.Date(2026, time.May, 17, 12, 0, 0, 0, time.UTC)
+	streamer := &entities.Streamer{Username: "oldlogin", ChannelID: "123456"}
+
+	recordMinuteWatchFailure(streamer, now)
+	recordMinuteWatchFailure(streamer, now.Add(10*time.Second))
+	if !streamer.WatchBackoffUntil.IsZero() {
+		t.Fatalf("backoff should not start before threshold")
+	}
+
+	recordMinuteWatchFailure(streamer, now.Add(20*time.Second))
+	if !streamer.WatchBackoffUntil.After(now) {
+		t.Fatalf("expected backoff to start after repeated failures")
+	}
+	if streamer.WatchFailureCount != 3 {
+		t.Fatalf("failure count got %d", streamer.WatchFailureCount)
+	}
+}
+
+func TestRecordMinuteWatchSuccessClearsBackoff(t *testing.T) {
+	streamer := &entities.Streamer{
+		Username:          "oldlogin",
+		WatchFailureCount: 3,
+		WatchBackoffUntil: time.Now().Add(5 * time.Minute),
+	}
+
+	recordMinuteWatchSuccess(streamer)
+	if streamer.WatchFailureCount != 0 {
+		t.Fatalf("failure count got %d", streamer.WatchFailureCount)
+	}
+	if !streamer.WatchBackoffUntil.IsZero() {
+		t.Fatalf("backoff should be cleared")
+	}
+}
+
+func TestPickStreamersToWatchSkipsBackedOffStreamer(t *testing.T) {
+	now := time.Now()
+	backedOff := testWatchSelectionStreakStreamer("stuck", "channel-stuck", "game", now.Add(-time.Minute), 0)
+	backedOff.WatchBackoffUntil = now.Add(10 * time.Minute)
+	backedOff.WatchFailureCount = 3
+
+	healthy := testWatchSelectionStreakStreamer("healthy", "channel-healthy", "game", now.Add(-time.Minute), 0)
+	fallback := &entities.Streamer{
+		Username: "fallback",
+		IsOnline: true,
+		OnlineAt: now.Add(-time.Minute),
+		Stream: &entities.Stream{
+			BroadcastID:        "fallback-broadcast",
+			Game:               map[string]interface{}{"displayName": "Different Game"},
+			WatchStreakMissing: false,
+			CreatedAt:          now.Add(-time.Minute),
+			StreamUpAt:         now.Add(-time.Minute),
+		},
+	}
+
+	m := &Miner{
+		watchPriorities: []watchPriority{watchPriorityStreak, watchPriorityOrder},
+	}
+
+	got := m.pickStreamersToWatch([]*entities.Streamer{backedOff, healthy, fallback})
+	for _, streamer := range got {
+		if streamer == backedOff {
+			t.Fatalf("backed off streamer should not be selected")
+		}
+	}
+	if len(got) == 0 || got[0] != healthy {
+		t.Fatalf("healthy streak should still be selectable")
+	}
+}
+
+func TestStreamerWatchBackedOffExpires(t *testing.T) {
+	now := time.Date(2026, time.May, 17, 12, 0, 0, 0, time.UTC)
+	streamer := &entities.Streamer{
+		Username:          "stuck",
+		WatchBackoffUntil: now.Add(5 * time.Minute),
+	}
+
+	if !streamerWatchBackedOff(streamer, now.Add(time.Minute)) {
+		t.Fatalf("streamer should be backed off before expiry")
+	}
+	if streamerWatchBackedOff(streamer, now.Add(6*time.Minute)) {
+		t.Fatalf("streamer should be selectable after expiry")
 	}
 }
 
