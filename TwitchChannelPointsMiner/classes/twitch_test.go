@@ -377,6 +377,37 @@ func TestUpdateStreamSkipsRewardListWhenWatchStreakDisabled(t *testing.T) {
 	}
 }
 
+func TestUpdateStreamIncludesGameMetadataWhenClaimDropsDisabled(t *testing.T) {
+	twitch := newTestTwitch(t, func(operation string) (*http.Response, error) {
+		switch operation {
+		case "VideoPlayerStreamInfoOverlayChannel":
+			return jsonResponse(http.StatusOK, `{"data":{"user":{"stream":{"id":"broadcast-1","createdAt":"2026-03-01T10:00:00Z","viewersCount":42,"tags":[]},"broadcastSettings":{"title":"title","game":{"id":"game-1","name":"Game","displayName":"Game"}}}}}`), nil
+		default:
+			t.Fatalf("unexpected operation: %s", operation)
+			return nil, nil
+		}
+	})
+	streamer := newTestStreamer(false)
+	streamer.Settings.ClaimDrops = false
+
+	if err := twitch.UpdateStream(streamer); err != nil {
+		t.Fatalf("UpdateStream returned error: %v", err)
+	}
+	if len(streamer.Stream.Payload) != 1 {
+		t.Fatalf("payload count got %d want 1", len(streamer.Stream.Payload))
+	}
+	props, ok := streamer.Stream.Payload[0]["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("payload properties missing")
+	}
+	if props["game"] != "Game" {
+		t.Fatalf("game got %#v want Game in payload %#v", props["game"], props)
+	}
+	if props["game_id"] != "game-1" {
+		t.Fatalf("game_id got %#v want game-1 in payload %#v", props["game_id"], props)
+	}
+}
+
 func TestDropStatusesFromInventoryParsesProgress(t *testing.T) {
 	statuses := dropStatusesFromInventory(map[string]interface{}{
 		"dropCampaignsInProgress": []interface{}{

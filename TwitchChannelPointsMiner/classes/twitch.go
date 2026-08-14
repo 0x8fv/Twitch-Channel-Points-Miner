@@ -700,11 +700,14 @@ func (t *Twitch) UpdateStream(streamer *entities.Streamer) error {
 		"live":         true,
 		"channel":      streamer.Username,
 	}
-	if name, ok := game["name"].(string); ok && name != "" && streamer.Settings.ClaimDrops {
-		eventProps["game"] = name
+	gameName, hasGameName := game["name"].(string)
+	if hasGameName && gameName != "" {
+		eventProps["game"] = gameName
 		if id, ok := game["id"].(string); ok {
 			eventProps["game_id"] = id
 		}
+	}
+	if hasGameName && gameName != "" && streamer.Settings.ClaimDrops {
 		// campaigns, hasGameDrops, err := t.CampaignIDsForStreamer(streamer)
 		campaigns, err := t.CampaignIDsForStreamer(streamer)
 		if err == nil {
