@@ -38,6 +38,7 @@ When running a prebuilt binary, the miner uses `./config.json` if it exists in t
 - `disable_ssl_cert_verification`: Disables TLS certificate/hostname verification for PubSub WebSockets only; leave `false` unless you know you need it.
 - `timezone`: Optional IANA timezone name (e.g. `Europe/Berlin`) to override auto-detection for environments like Android/Termux; leave `null`/empty to auto-detect.
 - `claim_drops_startup`, `claim_drops`, `follow_raid`: Auto-claim drops at boot, continue claiming while running, and auto-follow raid targets.
+- `show_drops_progress`: When `true`, log compact `DROP_PROGRESS` status lines during the existing 30-minute drop inventory checks. Default `false` keeps drop logging limited to successful claims.
 - `claim_moments`: Global default for listening to and claiming Twitch Moments via PubSub (`community-moments-channel-v1`). Per-streamer `streamer_overrides.<name>.claim_moments` still takes precedence.
 - `betting(make_predictions)`: Enable Twitch prediction betting.
 - `watch_streak_warm_start_cache`: When `true` (default), reuse recent watch-streak state for the same still-live stream across restarts to avoid re-probing every online channel at startup. The miner stores this account-scoped cache at `log/watch_streak_cache.<username>.json`.
@@ -106,7 +107,7 @@ When running a prebuilt binary, the miner uses `./config.json` if it exists in t
 - Loads channel points context to grab balances and blue chests; watches two live streams at a time for minute-watched events to keep streaks active.
 - If you have an active subscription (multiplier) on a streamer, their name is highlighted in gold everywhere it appears in the logs so you can quickly spot priority channels.
 - Listens to PubSub (`community-points-user-v1`) for instant point gain updates and logs deltas with reasons.
-- Periodically claims inventory drops and can auto-join raids and continue mining the destination channel.
+- Periodically claims inventory drops, can optionally log drop progress during those checks, and can auto-join raids and continue mining the destination channel.
 
 ## Notes
 - Tested with Go 1.21; dependencies are in `go.mod`.

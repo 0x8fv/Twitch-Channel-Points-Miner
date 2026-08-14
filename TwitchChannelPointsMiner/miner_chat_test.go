@@ -50,6 +50,7 @@ func TestNewMinerDisableAtInNicknameSetting(t *testing.T) {
 		false,
 		false,
 		true,
+		false,
 	)
 
 	if !minr.disableAtInNickname {

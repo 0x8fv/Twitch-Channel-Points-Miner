@@ -28,6 +28,20 @@ type gqlChannelPointsContextResponse struct {
 	} `json:"data"`
 }
 
+type TwitchUserIdentity struct {
+	ID          string
+	Login       string
+	DisplayName string
+}
+
+type helixUsersResponse struct {
+	Data []struct {
+		ID          string `json:"id"`
+		Login       string `json:"login"`
+		DisplayName string `json:"display_name"`
+	} `json:"data"`
+}
+
 type gqlID struct {
 	ID string `json:"id"`
 }
@@ -79,7 +93,7 @@ type gqlRewardListResponse struct {
 						AchievementTimestamp string `json:"achievementTimestamp"`
 					} `json:"watchStreakMilestone"`
 					MissedStreams []gqlMissedStream `json:"missedStreams"`
-					ExpiresAt string `json:"expiresAt"`
+					ExpiresAt     string            `json:"expiresAt"`
 				} `json:"watchStreakMilestone"`
 			} `json:"self"`
 		} `json:"channel"`

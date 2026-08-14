@@ -20,6 +20,7 @@ func TestDefaultConfigIncludesExpectedKeys(t *testing.T) {
 		"game_priority",
 		"chat_presence",
 		"disable_at_in_nickname",
+		"show_drops_progress",
 		"bet",
 		"watch_priority",
 	}
@@ -27,6 +28,9 @@ func TestDefaultConfigIncludesExpectedKeys(t *testing.T) {
 		if _, ok := cfg[key]; !ok {
 			t.Fatalf("missing key %q in default config", key)
 		}
+	}
+	if got, ok := cfg["show_drops_progress"].(bool); !ok || got {
+		t.Fatalf("show_drops_progress default got %#v, want false", cfg["show_drops_progress"])
 	}
 }
 

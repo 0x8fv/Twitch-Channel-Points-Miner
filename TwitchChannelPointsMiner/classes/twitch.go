@@ -27,7 +27,10 @@ import (
 	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/utils"
 )
 
-var ErrStreamerOffline = errors.New("streamer offline")
+var (
+	ErrStreamerOffline = errors.New("streamer offline")
+	ErrChannelNotFound = errors.New("channel not found")
+)
 
 type debugLogger interface {
 	Debugf(format string, args ...interface{})
@@ -65,6 +68,18 @@ type ClaimedDrop struct {
 	CampaignName  string
 	CurrentValue  int
 	RequiredValue int
+}
+
+type DropStatus struct {
+	DropInstanceID string
+	RewardName     string
+	CampaignName   string
+	GameName       string
+	ChannelName    string
+	CurrentValue   int
+	RequiredValue  int
+	Claimable      bool
+	Claimed        bool
 }
 
 func NewTwitch(username, userAgent, password string, logger debugLogger, anonymizer *privacy.Anonymizer) (*Twitch, error) {
@@ -108,6 +123,49 @@ func (t *Twitch) ChatToken() string {
 		return ""
 	}
 	return t.twitchLogin.AuthToken()
+}
+
+func (t *Twitch) GetUserByID(channelID string) (*TwitchUserIdentity, error) {
+	channelID = strings.TrimSpace(channelID)
+	if channelID == "" {
+		return nil, fmt.Errorf("missing channel id: %w", ErrChannelNotFound)
+	}
+	if t == nil || t.client == nil || t.twitchLogin == nil {
+		return nil, fmt.Errorf("missing twitch client")
+	}
+
+	endpoint := "https://api.twitch.tv/helix/users?id=" + url.QueryEscape(channelID)
+	req, _ := http.NewRequest(http.MethodGet, endpoint, nil)
+	req.Header.Set("Authorization", "Bearer "+t.twitchLogin.AuthToken())
+	req.Header.Set("Client-Id", constants.ClientID)
+	if t.userAgent != "" {
+		req.Header.Set("User-Agent", t.userAgent)
+	}
+
+	resp, err := t.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("helix user lookup failed: %d %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var out helixUsersResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	if len(out.Data) == 0 {
+		return nil, fmt.Errorf("channel id %s not found: %w", channelID, ErrChannelNotFound)
+	}
+
+	user := out.Data[0]
+	return &TwitchUserIdentity{
+		ID:          user.ID,
+		Login:       strings.ToLower(strings.TrimSpace(user.Login)),
+		DisplayName: strings.TrimSpace(user.DisplayName),
+	}, nil
 }
 
 func (t *Twitch) debugf(format string, args ...interface{}) {
@@ -338,7 +396,7 @@ func (t *Twitch) LoadChannelPointsContext(streamer *entities.Streamer) (int, err
 		if t.anonymizer != nil && t.anonymizer.Enabled() {
 			name = t.anonymizer.StreamerName(streamer)
 		}
-		return 0, fmt.Errorf("channel missing for %s", name)
+		return 0, fmt.Errorf("channel missing for %s: %w", name, ErrChannelNotFound)
 	}
 	pointsData := channel.Self.CommunityPoints
 	balance := pointsData.Balance
@@ -575,7 +633,7 @@ func (t *Twitch) streamInfoOverlay(username, channelID string) (*streamInfoResul
 		return nil, err
 	}
 	if resp.Data.User == nil {
-		return nil, fmt.Errorf("missing user data for %s", username)
+		return nil, fmt.Errorf("missing user data for %s: %w", username, ErrChannelNotFound)
 	}
 	if resp.Data.User.Stream == nil || resp.Data.User.BroadcastSettings == nil {
 		return nil, ErrStreamerOffline
@@ -956,55 +1014,40 @@ func (t *Twitch) ClaimDrop(dropInstanceID string) (bool, error) {
 }
 
 func (t *Twitch) ClaimAllDropsFromInventory() ([]ClaimedDrop, error) {
+	claimedDrops, _, err := t.ClaimAllDropsFromInventoryWithStatuses()
+	return claimedDrops, err
+}
+
+func (t *Twitch) ClaimAllDropsFromInventoryWithStatuses() ([]ClaimedDrop, []DropStatus, error) {
 	var claimedDrops []ClaimedDrop
 	inv := t.inventory()
 	if inv == nil {
-		return claimedDrops, nil
+		return claimedDrops, nil, nil
 	}
-	active, _ := inv["dropCampaignsInProgress"].([]interface{})
+	statuses := dropStatusesFromInventory(inv)
 	var claimErr error
-	for _, c := range active {
-		campaign, ok := c.(map[string]interface{})
-		if !ok {
+	for _, status := range statuses {
+		if status.DropInstanceID == "" || status.Claimed {
 			continue
 		}
-		campaignName := campaignNameFromInventory(campaign)
-		td, _ := campaign["timeBasedDrops"].([]interface{})
-		for _, d := range td {
-			inner, ok := d.(map[string]interface{})
-			if !ok {
-				continue
+		ok, err := t.ClaimDrop(status.DropInstanceID)
+		if err != nil {
+			if claimErr == nil {
+				claimErr = err
 			}
-			self, _ := inner["self"].(map[string]interface{})
-			if self == nil {
-				continue
-			}
-			alreadyClaimed, _ := self["isClaimed"].(bool)
-			id, _ := self["dropInstanceID"].(string)
-			if id == "" || alreadyClaimed {
-				continue
-			}
-			rewardName := rewardNameFromInventory(inner)
-			current, required := dropProgress(inner, self)
-			ok, err := t.ClaimDrop(id)
-			if err != nil {
-				if claimErr == nil {
-					claimErr = err
-				}
-				continue
-			}
-			if ok {
-				claimedDrops = append(claimedDrops, ClaimedDrop{
-					RewardName:    rewardName,
-					CampaignName:  campaignName,
-					CurrentValue:  current,
-					RequiredValue: required,
-				})
-				time.Sleep(time.Duration(randomInt(5, 10)) * time.Second)
-			}
+			continue
+		}
+		if ok {
+			claimedDrops = append(claimedDrops, ClaimedDrop{
+				RewardName:    status.RewardName,
+				CampaignName:  status.CampaignName,
+				CurrentValue:  status.CurrentValue,
+				RequiredValue: status.RequiredValue,
+			})
+			time.Sleep(time.Duration(randomInt(5, 10)) * time.Second)
 		}
 	}
-	return claimedDrops, claimErr
+	return claimedDrops, statuses, claimErr
 }
 
 // ? ContributeToCommunityGoals mirrors the site behavior by spending points into active community goals.
@@ -1123,6 +1166,116 @@ func rewardNameFromInventory(drop map[string]interface{}) string {
 		return name
 	}
 	return ""
+}
+
+func dropStatusesFromInventory(inv map[string]interface{}) []DropStatus {
+	if inv == nil {
+		return nil
+	}
+	active, _ := inv["dropCampaignsInProgress"].([]interface{})
+	statuses := make([]DropStatus, 0)
+	for _, c := range active {
+		campaign, ok := c.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		campaignName := campaignNameFromInventory(campaign)
+		gameName := gameNameFromInventory(campaign)
+		channelName := channelNameFromInventory(campaign)
+		td, _ := campaign["timeBasedDrops"].([]interface{})
+		for _, d := range td {
+			inner, ok := d.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			self, _ := inner["self"].(map[string]interface{})
+			if self == nil {
+				continue
+			}
+			claimed, _ := self["isClaimed"].(bool)
+			current, required := dropProgress(inner, self)
+			statuses = append(statuses, DropStatus{
+				DropInstanceID: mapStringValue(self, "dropInstanceID"),
+				RewardName:     rewardNameFromInventory(inner),
+				CampaignName:   campaignName,
+				GameName:       gameName,
+				ChannelName:    channelName,
+				CurrentValue:   current,
+				RequiredValue:  required,
+				Claimable:      dropClaimable(inner, self, current, required, claimed),
+				Claimed:        claimed,
+			})
+		}
+	}
+	return statuses
+}
+
+func gameNameFromInventory(campaign map[string]interface{}) string {
+	if campaign == nil {
+		return ""
+	}
+	if game, ok := campaign["game"].(map[string]interface{}); ok {
+		if name := mapStringValue(game, "displayName", "name"); name != "" {
+			return name
+		}
+	}
+	return mapStringValue(campaign, "gameDisplayName", "gameName")
+}
+
+func channelNameFromInventory(campaign map[string]interface{}) string {
+	if campaign == nil {
+		return ""
+	}
+	if name := mapStringValue(campaign, "channelLogin", "channelName", "channelDisplayName"); name != "" {
+		return name
+	}
+	for _, path := range []string{"channel.login", "channel.name", "channel.displayName"} {
+		if name, _ := navigate(campaign, path).(string); strings.TrimSpace(name) != "" {
+			return strings.TrimSpace(name)
+		}
+	}
+	for _, key := range []string{"channels", "eligibleChannels", "allowChannels", "allowedChannels"} {
+		if name := channelNameFromList(campaign[key]); name != "" {
+			return name
+		}
+	}
+	return ""
+}
+
+func channelNameFromList(raw interface{}) string {
+	channels, ok := raw.([]interface{})
+	if !ok {
+		return ""
+	}
+	for _, item := range channels {
+		channel, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if name := mapStringValue(channel, "login", "name", "displayName"); name != "" {
+			return name
+		}
+		for _, path := range []string{"channel.login", "channel.name", "channel.displayName"} {
+			if name, _ := navigate(channel, path).(string); strings.TrimSpace(name) != "" {
+				return strings.TrimSpace(name)
+			}
+		}
+	}
+	return ""
+}
+
+func dropClaimable(drop map[string]interface{}, self map[string]interface{}, current, required int, claimed bool) bool {
+	if claimed {
+		return false
+	}
+	for _, data := range []map[string]interface{}{self, drop} {
+		for _, key := range []string{"isClaimable", "claimable", "canClaim", "isClaimAvailable", "isClaimReady"} {
+			if val, ok := data[key].(bool); ok {
+				return val
+			}
+		}
+	}
+	return required > 0 && current >= required
 }
 
 func dropProgress(drop map[string]interface{}, self map[string]interface{}) (int, int) {
@@ -1285,7 +1438,7 @@ func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 			if err != nil {
 				return false, err
 			}
-			respdata := navigate(resp, "data.user." + mode)
+			respdata := navigate(resp, "data.user."+mode)
 			if respdata == nil {
 				return false, fmt.Errorf("missing %s data for channel %s", mode, streamer.ChannelID)
 			}
