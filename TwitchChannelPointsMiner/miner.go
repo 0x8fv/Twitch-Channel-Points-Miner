@@ -544,6 +544,7 @@ func (m *Miner) run(streamers []string, useFollowers bool, order entities.Follow
 	go m.contextRefresher(streamerObjs, m.stop)
 	go m.minuteWatcher(streamerObjs, m.stop)
 	go m.startPubSub(streamerObjs, m.stop)
+	go m.streakRecovery(streamerObjs, m.stop)
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
@@ -631,6 +632,34 @@ func (m *Miner) contextRefresher(streamers []*entities.Streamer, stop <-chan str
 					// m.refreshCampaigns(s)
 				}
 			}
+		case <-stop:
+			return
+		}
+	}
+}
+
+func (m *Miner) streakRecovery(streamers []*entities.Streamer, stop <-chan struct{}) {
+	ticker := time.NewTicker(60 * time.Minute)
+	defer ticker.Stop()
+	for {
+		expiringstreaks := 0
+		savedstreaks := 0
+		for _, s := range streamers {
+			if saved, err := m.twitch.RecoverStreak(s); err == nil {
+				if saved {
+					expiringstreaks += 1
+					savedstreaks += 1
+				}
+			} else {
+				expiringstreaks += 1
+				m.logger.EmojiPrintf(":ambulance:", "streak recovery %s: %v", m.styledStreamerName(s), err)
+			}
+		}
+		m.logger.EmojiPrintf(":ambulance:", "streak recovery: %d streaks expiring, %d saved", expiringstreaks, savedstreaks)
+
+		select {
+		case <-ticker.C:
+			continue
 		case <-stop:
 			return
 		}
