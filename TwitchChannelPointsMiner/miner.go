@@ -1586,21 +1586,21 @@ func (m *Miner) logOnline(streamer *entities.Streamer) {
 	if suffix := m.gameSuffix(streamer); suffix != "" {
 		gameSuffix = fmt.Sprintf(" | %s %s", fmt.Sprintf("%sPlaying:%s", colorGameLabel, colorReset), suffix)
 	}
-	streaklengthSuffix := ""
+	extrainfoSuffix := ""
 	if m.twitch != nil && streamer != nil && streamer.ChannelID != "" {
-		streaklengthSuffix = fmt.Sprintf(" | streak length %d", m.twitch.RewardListStreakLength(streamer.ChannelID))
+		extrainfoSuffix = m.twitch.LogExtraInfo(streamer.ChannelID, true)
 	}
-	m.logger.EmojiEventf(":partying_face:", constants.EventStreamerOnline, "%s (%s%s%s points) is %sOnline%s!%s%s", name, colorCyan, points, colorReset, colorGreen, colorReset, streaklengthSuffix, gameSuffix)
+	m.logger.EmojiEventf(":partying_face:", constants.EventStreamerOnline, "%s (%s%s%s points) is %sOnline%s!%s%s", name, colorCyan, points, colorReset, colorGreen, colorReset, gameSuffix, extrainfoSuffix)
 }
 
 func (m *Miner) logOffline(streamer *entities.Streamer) {
 	name := m.styledStreamerName(streamer)
 	points := m.formattedStreamerPoints(streamer)
-	streaklengthSuffix := ""
+	extrainfoSuffix := ""
 	if m.twitch != nil && streamer != nil && streamer.ChannelID != "" {
-		streaklengthSuffix = fmt.Sprintf(" | streak length %d", m.twitch.RewardListStreakLength(streamer.ChannelID))
+		extrainfoSuffix = m.twitch.LogExtraInfo(streamer.ChannelID, false)
 	}
-	m.logger.EmojiEventf(":sleeping:", constants.EventStreamerOffline, "%s (%s%s%s points) is %sOffline%s!%s", name, colorCyan, points, colorReset, colorRed, colorReset, streaklengthSuffix)
+	m.logger.EmojiEventf(":sleeping:", constants.EventStreamerOffline, "%s (%s%s%s points) is %sOffline%s!%s", name, colorCyan, points, colorReset, colorRed, colorReset, extrainfoSuffix)
 }
 
 func (m *Miner) handleGameChange(streamer *entities.Streamer, previous, current string) {
