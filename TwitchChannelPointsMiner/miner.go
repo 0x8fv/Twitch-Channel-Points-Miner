@@ -510,8 +510,19 @@ func (m *Miner) run(streamers []string, useFollowers bool, order entities.Follow
 		}
 		id, err := m.twitch.GetChannelID(name)
 		if err != nil {
-			m.logger.Printf("skip %s: %v", m.rawStreamerName(name), err)
-			continue
+			// if channel id can't be gotten from twitch, try checking warm start cache
+			// in case streamer has changed names recently
+			id = ""
+			if m.warmStartCache != nil {
+				entry, ok := m.warmStartCache.get(name)
+				if ok {
+					id = strings.TrimSpace(entry.ChannelID)
+				}
+			}
+			if id == "" {
+				m.logger.Printf("skip %s: %v", m.rawStreamerName(name), err)
+				continue
+			}
 		}
 		s.ChannelID = id
 		prev := s.ChannelPoints
