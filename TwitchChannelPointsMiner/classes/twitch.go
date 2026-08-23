@@ -1425,6 +1425,8 @@ func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 	}
 	length0 := extractWatchStreakLength(&resp0)
 
+	clipsfound := 0
+	vodsfound := 0
 	for _, filter := range []string{"LAST_DAY", "LAST_WEEK", "videos"} {
 		// check clips, last day first then last week (in case clips just over 24 hours old are from missed stream)
 		// then check vods
@@ -1476,6 +1478,7 @@ func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 
 					if mode == "clips" {
 						// clip from a missed stream, eligible for saving streak, watch it
+						clipsfound += 1
 						url, _ := node["url"].(string)
 						clipid, _ := node["id"].(string)
 						slug, _ := node["slug"].(string)
@@ -1532,6 +1535,7 @@ func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 						}
 					} else {
 						// vod from a missed stream, eligible for saving streak, watch it
+						vodsfound += 1
 						vodid, _ := node["id"].(string)
 						publishedAt, _ := node["publishedAt"].(string)
 						eventProps := map[string]interface{}{
@@ -1583,6 +1587,14 @@ func (t *Twitch) RecoverStreak(streamer *entities.Streamer) (bool, error) {
 				}
 				hasNext = false
 			}
+		}
+	}
+	if vodsfound == 0 {
+		// add an extra sleep to let streak expiration refresh here
+		if clipsfound == 1 {
+			time.Sleep(10 * time.Second)
+		} else if clipsfound > 1 {
+			time.Sleep(5 * time.Second)
 		}
 	}
 
