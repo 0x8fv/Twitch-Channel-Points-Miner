@@ -105,6 +105,7 @@ When running a prebuilt binary, the miner uses `./config.json` if it exists in t
 ## How it works
 - Authenticates via Twitch device flow, persists cookies per user, and refreshes the client build id for GQL calls.
 - Loads channel points context to grab balances and blue chests; watches two live streams at a time for minute-watched events to keep streaks active.
+- The same watch loop reads HLS playlists and sends HEAD requests for every listed segment to generate Drops playback traffic, without downloading audio or video. Playlist URLs are cached and renewed after failures or a broadcast change; the existing telemetry cadence is unchanged.
 - If you have an active subscription (multiplier) on a streamer, their name is highlighted in gold everywhere it appears in the logs so you can quickly spot priority channels.
 - Listens to PubSub (`community-points-user-v1`) for instant point gain updates and logs deltas with reasons.
 - Periodically claims inventory drops, can optionally log drop progress during those checks, and can auto-join raids and continue mining the destination channel.
@@ -112,6 +113,7 @@ When running a prebuilt binary, the miner uses `./config.json` if it exists in t
 ## Notes
 - Tested with Go 1.21; dependencies are in `go.mod`.
 - Shortcut commands: `go fmt ./...` to format, `go test ./...` to run unit tests.
+- Accepted minute-watched telemetry does not prove Drops credit. Check Twitch's own Drops inventory for authoritative progress.
 - macOS: if Finder opens the downloaded binary in a text editor, run it from Terminal and make it executable first (e.g. `chmod +x TwitchChannelPointsMiner-darwin-arm64`).
 
 ## Disclaimer

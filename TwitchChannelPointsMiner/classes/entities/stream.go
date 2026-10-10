@@ -20,6 +20,7 @@ type Stream struct {
 	DropsActive       bool
 	ViewersCount      int
 	SpadeURL          string
+	PlaylistURL       string
 	Payload           []map[string]interface{}
 
 	WatchStreakMissing bool
@@ -45,6 +46,7 @@ func (s *Stream) Update(broadcastID, title string, game map[string]interface{}, 
 	if s.BroadcastID != "" && s.BroadcastID != broadcastID {
 		s.WatchStreakMissing = true
 		s.ResetWatchProgress()
+		s.PlaylistURL = ""
 	}
 	s.BroadcastID = broadcastID
 	s.Title = strings.TrimSpace(title)
