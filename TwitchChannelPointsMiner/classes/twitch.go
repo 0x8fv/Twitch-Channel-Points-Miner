@@ -964,7 +964,11 @@ func (t *Twitch) SendMinuteWatched(streamer *entities.Streamer) error {
 		return err
 	}
 	if err := t.sendWatchPlaylist(streamer); err != nil {
-		return err
+		name := displayName(streamer.Username)
+		if t.anonymizer != nil && t.anonymizer.Enabled() {
+			name = t.anonymizer.StreamerName(streamer)
+		}
+		t.logger.Errorf("minute watch %s: %v", name, err)
 	}
 	if streamer.Stream.SpadeURL == "" {
 		if err := t.GetSpadeURL(streamer); err != nil {
