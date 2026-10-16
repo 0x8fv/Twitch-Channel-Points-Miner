@@ -30,8 +30,8 @@ const (
 )
 
 const (
-	streakPriorityMinutesBase     = 7.0
-	streakPriorityMinutesExtended = 20.0
+	streakPriorityMinutesBase     = 15.0
+	streakPriorityMinutesExtended = 15.0
 	resolvedStreakCarryoverWindow = 30 * time.Minute
 	falseOfflineStreamStartGrace  = 2 * time.Minute
 )
@@ -962,7 +962,7 @@ func (m *Miner) pickStreamersToWatch(streamers []*entities.Streamer) []*entities
 		if streamerWatchBackedOff(s, now) {
 			continue
 		}
-		if !s.OnlineAt.IsZero() && now.Sub(s.OnlineAt) < 30*time.Second {
+		if !s.OnlineAt.IsZero() && now.Sub(s.OnlineAt) < 0*time.Second {
 			continue
 		}
 		m.refreshStreamForPreference(s)
@@ -1961,7 +1961,7 @@ func (m *Miner) updateHistory(streamer *entities.Streamer, reason string, amount
 	}
 	if reason == "WATCH" {
 		streamer.Stream.WatchCount++
-		if streamer.Stream.WatchStreakMissing && streamer.Stream.WatchCount >= 2 {
+		if streamer.Stream.WatchStreakMissing && streamer.Stream.WatchCount >= 1 {
 			markActualStreakCompleted(streamer)
 		}
 		m.syncActiveStreakWatch(streamer, time.Now())
