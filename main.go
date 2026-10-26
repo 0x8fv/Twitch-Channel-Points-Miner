@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strconv"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -475,6 +476,8 @@ func loadOrCreateConfig(path string) (config, error) {
 		}
 	}
 
+	applyEnvOverrides(cfgMap)
+
 	normalized, err := json.Marshal(cfgMap)
 	if err != nil {
 		return config{}, err
@@ -484,6 +487,126 @@ func loadOrCreateConfig(path string) (config, error) {
 		return config{}, err
 	}
 	return cfg, nil
+}
+
+func envKeyName(parts []string) string {
+	out := "TCPM"
+	for _, p := range parts {
+		key := strings.ToUpper(p)
+		key = strings.Map(func(r rune) rune {
+			if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+				return r
+			}
+			return '_'
+		}, key)
+		out += "_" + key
+	}
+	return out
+}
+
+func parseEnvValue(raw string, existing interface{}) interface{} {
+	trimmed := strings.TrimSpace(raw)
+	lower := strings.ToLower(trimmed)
+	switch v := existing.(type) {
+	case bool:
+		if lower == "true" || lower == "1" || lower == "yes" {
+			return true
+		}
+		if lower == "false" || lower == "0" || lower == "no" {
+			return false
+		}
+		return v
+	case *bool:
+		_ = v
+	case float64:
+		// json numbers -> float64 in map
+		if f, err := strconv.ParseFloat(trimmed, 64); err == nil {
+			return f
+		}
+	case int:
+		if i, err := strconv.Atoi(trimmed); err == nil {
+			return i
+		}
+	case []interface{}:
+		// string list
+		parts := strings.Split(trimmed, ",")
+		out := make([]interface{}, 0, len(parts))
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			out = append(out, p)
+		}
+		if trimmed == "" {
+			return []interface{}{}
+		}
+		return out
+	case []string:
+		parts := strings.Split(trimmed, ",")
+		out := []string{}
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			out = append(out, p)
+		}
+		return out
+	case string:
+		return trimmed
+	case nil:
+		// try bool/number
+		if lower == "true" {
+			return true
+		}
+		if lower == "false" {
+			return false
+		}
+		if i, err := strconv.Atoi(trimmed); err == nil {
+			return i
+		}
+		if f, err := strconv.ParseFloat(trimmed, 64); err == nil {
+			return f
+		}
+		if trimmed == "" {
+			return nil
+		}
+		return trimmed
+	}
+	// maps; try json
+	if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
+		var parsed interface{}
+		if err := json.Unmarshal([]byte(trimmed), &parsed); err == nil {
+			return parsed
+		}
+	}
+	return existing
+}
+
+func applyEnvOverrides(m map[string]interface{}, prefix ...string) {
+	for key, val := range m {
+		path := append([]string{}, prefix...)
+		path = append(path, key)
+		envName := envKeyName(path)
+		// nested map
+		if nested, ok := val.(map[string]interface{}); ok {
+			// allow whole object override via json
+			if raw := os.Getenv(envName); strings.TrimSpace(raw) != "" {
+				var parsed map[string]interface{}
+				if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &parsed); err == nil {
+					for k, v := range parsed {
+						nested[k] = v
+					}
+				}
+			}
+			applyEnvOverrides(nested, path...)
+			continue
+		}
+		if raw := os.Getenv(envName); strings.TrimSpace(raw) != "" {
+			m[key] = parseEnvValue(raw, val)
+		}
+	}
 }
 
 func applyTimezoneOverride(raw *string, logger *miner.Logger) {

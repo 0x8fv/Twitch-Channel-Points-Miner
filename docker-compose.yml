@@ -1,0 +1,25 @@
+services:
+  tcpm:
+    container_name: TwitchChannelPointsMiner
+    image: tcpm:latest
+    build:
+      no_cache: false
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    volumes:
+      # save the twitch cookies, if you don't save cookies you will have to sign in again on each launch
+      - cookies:/app/data/cookies
+    environment:
+      TCPM_AUTO_UPDATE: false # not really supported for docker containers
+      TCPM_USERNAME: ${TCPM_USERNAME:?Enter your Twitch username in .env}
+      TCPM_SAVE_LOGS: false
+      TCPM_EMOJIS: false
+      TCPM_PRIVACY_ANONYMIZE_LOGS: false
+      TCPM_SHOW_CLAIMED_BONUS_MSG: true
+    # If you dont want to add many variables here
+    # you can also use a whole env-file
+    # env_file: .env
+
+volumes:
+  cookies:
+    name: tcpm-twitch-cookies

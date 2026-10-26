@@ -2,3 +2,4 @@ log
 cookies
 config.json
 dist/
+.env

@@ -18,7 +18,7 @@ Go rewrite of [0x8fv/Twitch-Channel-Points-Miner-v2](https://github.com/0x8fv/Tw
 - Can target a manual list of streamers or mine everyone you follow.
 
 ## Quick start
-1) Install Go 1.21+.
+1) Install Go 1.22+ (see `go.mod`).
 2) Copy `config.json` (it will be created/extended on first run) and set `username` plus any options you want. Leave the `streamers` array empty to mine all followed channels.
 3) Run `go run .` (or `go build -o twitch-miner` and execute `./twitch-miner`).
 4) On first launch you will see a device code prompt. Open `https://www.twitch.tv/activate`, enter the code, and wait until the app confirms login. Cookies are saved to `cookies/<username>.json` for future runs.
@@ -102,6 +102,30 @@ When running a prebuilt binary, the miner uses `./config.json` if it exists in t
   - `delay_mode` / `delay`: When to place the bet (default `FROM_END`, 6 seconds).
   - `filter_condition`: Optional object to skip betting unless a live metric meets your rule. Example: `{ "by": "TOTAL_USERS", "where": "GTE", "value": 50 }` to skip bets until at least 50 users participate. `by` supports `PERCENTAGE_USERS`, `ODDS`, `ODDS_PERCENTAGE`, `TOP_POINTS`, `TOTAL_USERS`, `TOTAL_POINTS`; `where` supports `GT`, `LT`, `GTE`, `LTE`.
 
+## Environment variable overrides
+
+Every key in `config.json` can be overridden with an environment variable. The
+variable name is `TCPM_` plus the uppercased key path joined by `_` (nested keys use underscores instead of dots). Values are parsed type-aware:
+
+- booleans: `true`/`false`/`1`/`0`/`yes`/`no`
+- integers and floats: `123`, `0.5`
+- strings: as-is
+- arrays of strings: comma-separated, e.g. `chan1,chan2`
+- objects: a JSON object passed to the parent variable
+
+Punctuation in a key also becomes `_`, so `betting(make_predictions)` is `TCPM_BETTING_MAKE_PREDICTIONS_` (trailing underscore; the shorter form is ignored). The `.env.example` uses the correct name.
+
+### Usage examples
+```
+TCPM_STREAMERS=coolstreamer,beststreamer ./tcp-miner
+TCPM_BET_STRATEGY=smart TCPM_DEBUG=true ./tcp-miner
+TCPM_PRIVACY_ANONYMIZE_LOGS=true ./tcp-miner
+```
+
+Path overrides still take precedence: `TCPM_CONFIG` and `TCPM_DATA_DIR`.
+
+This is what the Docker setup uses. See [Docker](#docker), `docker-compose.yml`, and `.env.example`.
+
 ## How it works
 - Authenticates via Twitch device flow, persists cookies per user, and refreshes the client build id for GQL calls.
 - Loads channel points context to grab balances and blue chests; watches two live streams at a time for minute-watched events to keep streaks active.
@@ -110,8 +134,52 @@ When running a prebuilt binary, the miner uses `./config.json` if it exists in t
 - Listens to PubSub (`community-points-user-v1`) for instant point gain updates and logs deltas with reasons.
 - Periodically claims inventory drops, can optionally log drop progress during those checks, and can auto-join raids and continue mining the destination channel.
 
+## Docker
+
+The two-stage `Dockerfile` builds a static binary and runs it on `scratch`. The final image has no shell or package manager, runs as root, and stores its data under `/app/data`. Compose builds `tcpm:latest` and persists cookies in the named volume `tcpm-twitch-cookies`.
+
+### Quick start
+
+```bash
+cp .env.example .env      # set TCPM_USERNAME
+docker compose up -d --build
+docker compose logs -f tcpm
+```
+
+Enter the device code from the logs on first start. `docker compose down` removes the container; `docker compose down -v` also deletes the cookies volume.
+
+### Configuration
+
+Compose reads `TCPM_USERNAME` from `.env`, but only forwards the variables in its `environment:` block. To use more `TCPM_*` variables, uncomment `env_file: .env`; `environment:` overwrites variables from `env_file:`. Env overrides are runtime-only and are not saved to `config.json`.
+
+Cookies are persisted by default. `config.json`, logs, and the watch-streak cache are lost when the container is recreated. To keep everything, mount `/app/data`:
+
+```yaml
+services:
+  tcpm:
+    volumes:
+      - ./tcpm-data:/app/data
+```
+
+The default container runs as root, so it can write to the bind mount. If you switch to `user: "10001:10001"`, chown `tcpm-data` to that UID first or you will have file system permission issues.
+
+### Build and update
+
+```bash
+docker build -t tcpm:latest .          # or: docker compose build
+docker run -d --name tcpm \
+  -e TCPM_USERNAME=your-twitch-username \
+  -e TCPM_AUTO_UPDATE=false \
+  -v tcpm-cookies:/app/data/cookies \
+  tcpm:latest
+```
+
+To update, pull the git repo and rebuild: `git pull && docker compose build --pull && docker compose up -d`. The in-container updater is disabled because changes to the container disappear when it is recreated.
+
+The image has no shell, so `docker exec` will not work; use `docker logs` and `docker cp` instead. 
+
 ## Notes
-- Tested with Go 1.21; dependencies are in `go.mod`.
+- Requires Go 1.22+; dependencies are in `go.mod`.
 - Shortcut commands: `go fmt ./...` to format, `go test ./...` to run unit tests.
 - Accepted minute-watched telemetry does not prove Drops credit. Check Twitch's own Drops inventory for authoritative progress.
 - macOS: if Finder opens the downloaded binary in a text editor, run it from Terminal and make it executable first (e.g. `chmod +x TwitchChannelPointsMiner-darwin-arm64`).
