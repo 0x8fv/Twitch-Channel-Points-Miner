@@ -118,6 +118,9 @@ func (l *Logger) logEvent(level, emoji string, event constants.Event, format str
 		clean := ansiRegexp.ReplaceAllString(message, "")
 		l.discord.Send(clean, event)
 	}
+	if event != "" {
+		analyticsEmitEvent(event, message)
+	}
 	timestampFormat := "15:04 02/01/06"
 	if l.settings.ShowSeconds {
 		timestampFormat = "15:04:05 02/01/06"

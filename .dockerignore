@@ -1,0 +1,9 @@
+.git
+.github
+dist
+assets
+log
+cookies
+analytics
+config.json
+*.md

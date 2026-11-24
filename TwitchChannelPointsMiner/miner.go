@@ -556,6 +556,7 @@ func (m *Miner) run(streamers []string, useFollowers bool, order entities.Follow
 	go m.minuteWatcher(streamerObjs, m.stop)
 	go m.startPubSub(streamerObjs, m.stop)
 	go m.streakRecovery(streamerObjs, m.stop)
+	go m.analyticsSnapshotter(m.stop)
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
@@ -1839,6 +1840,7 @@ func formatDuration(d time.Duration) string {
 func (m *Miner) handlePointsUpdate(streamer *entities.Streamer, previous int, reason string) {
 	if !streamer.PointsInit {
 		streamer.PointsInit = true
+		m.analyticsRecordPoint(streamer, 0, "")
 		return
 	}
 	delta := streamer.ChannelPoints - previous
@@ -1849,6 +1851,7 @@ func (m *Miner) logPointsDelta(streamer *entities.Streamer, delta int, reason st
 	if delta == 0 {
 		return
 	}
+	m.analyticsRecordPoint(streamer, delta, reason)
 	name := m.styledStreamerName(streamer)
 	points := m.formattedStreamerPoints(streamer)
 	sign := "+"

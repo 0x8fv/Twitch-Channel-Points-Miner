@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Channel Points Miner</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,.10); --wash: rgba(11,11,11,.05);
+  --line: #2a78d6; --up: #006300; --down: #b42525; --online: #0ca30c;
+  --ev-streak: #eb6834; --ev-claim: #1baf7a; --ev-raid: #6250d6; --ev-win: #008300;
+  --ev-lose: #e34948; --ev-refund: #eda100; --ev-drop: #e87ba4;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,.10); --wash: rgba(255,255,255,.06);
+  --line: #3987e5; --up: #0ca30c; --down: #e66767; --online: #0ca30c;
+  --ev-streak: #d95926; --ev-claim: #199e70; --ev-raid: #9085e9; --ev-win: #008300;
+  --ev-lose: #e66767; --ev-refund: #c98500; --ev-drop: #d55181;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--line); outline-offset: 2px; }
+.app { display: grid; grid-template-rows: auto 1fr; height: 100%; max-width: 1500px; margin: 0 auto; padding: 16px; gap: 16px; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px; }
+h1 { font-size: 16px; font-weight: 650; margin: 0; }
+.totals { display: flex; flex-wrap: wrap; gap: 8px 28px; margin: 0 auto 0 0; }
+.totals div { display: flex; flex-direction: column; }
+.totals dt { color: var(--ink2); font-size: 12px; }
+.totals dd { margin: 0; font-size: 20px; font-weight: 600; }
+.tools { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 12px; }
+.btn { border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; color: var(--ink2); background: var(--surface); }
+.btn:hover { background: var(--wash); }
+main { display: grid; grid-template-columns: 300px 1fr; gap: 16px; min-height: 0; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; min-height: 0; min-width: 0; }
+.side { display: flex; flex-direction: column; }
+.sorts { display: flex; align-items: center; gap: 4px; padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--ink2); font-size: 12px; }
+.sorts span { margin-right: auto; }
+.seg { padding: 3px 9px; border-radius: 6px; color: var(--ink2); }
+.seg:hover { background: var(--wash); }
+.seg[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+#list { list-style: none; margin: 0; padding: 6px; overflow-y: auto; flex: 1; }
+#list button { display: grid; grid-template-columns: 10px 1fr auto; align-items: center; gap: 2px 10px; width: 100%; text-align: left; padding: 7px 8px; border-radius: 7px; }
+#list button:hover { background: var(--wash); }
+#list button[aria-current="true"] { background: var(--wash); box-shadow: inset 2px 0 0 var(--line); }
+.dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--muted); }
+.dot.on { background: var(--online); border-color: var(--online); }
+.nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
+.pts { font-variant-numeric: tabular-nums; }
+.gain { grid-column: 3; justify-self: end; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.up { color: var(--up); } .down { color: var(--down); }
+.detail { display: flex; flex-direction: column; padding: 14px 16px 12px; gap: 10px; }
+.head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+.head h2 { margin: 0; font-size: 18px; font-weight: 650; display: flex; align-items: center; gap: 8px; }
+.head a { color: inherit; text-decoration: none; }
+.head a:hover { text-decoration: underline; }
+.state { font-size: 12px; font-weight: 400; color: var(--ink2); }
+.stats { display: flex; flex-wrap: wrap; gap: 4px 18px; color: var(--ink2); font-size: 13px; margin-right: auto; }
+.stats b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.ranges { display: flex; gap: 2px; border: 1px solid var(--border); border-radius: 8px; padding: 2px; }
+.plot { position: relative; flex: 1; min-height: 280px; transition: opacity .15s; }
+.plot.loading { opacity: .55; }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#tip { position: absolute; pointer-events: none; z-index: 2; display: none; max-width: 320px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; box-shadow: 0 4px 16px rgba(0,0,0,.18); font-size: 12px; }
+#tip .v { font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
+#tip .t { color: var(--ink2); }
+#tip .e { display: flex; gap: 6px; align-items: baseline; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
+#tip .e i { flex: none; width: 8px; height: 8px; border-radius: 50%; transform: translateY(-1px); }
+#tip .e b { font-weight: 600; }
+#tip .m { color: var(--ink2); overflow-wrap: anywhere; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px; min-height: 26px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px 2px 8px; font-size: 12px; color: var(--ink2); }
+.chip:hover { background: var(--wash); }
+.chip i { width: 8px; height: 8px; border-radius: 50%; }
+.chip em { font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums; }
+.chip[aria-pressed="false"] { opacity: .45; text-decoration: line-through; }
+.empty { color: var(--muted); padding: 24px; text-align: center; }
+@media (max-width: 820px) {
+  html, body { height: auto; }
+  .app { height: auto; }
+  main { grid-template-columns: 1fr; }
+  #list { max-height: 260px; }
+  .plot { min-height: 300px; flex: none; height: 300px; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Channel Points Miner</h1>
+    <dl class="totals">
+      <div><dt>Total points</dt><dd id="t-points">–</dd></div>
+      <div><dt>Session gain</dt><dd id="t-gain">–</dd></div>
+      <div><dt>Online</dt><dd id="t-online">–</dd></div>
+    </dl>
+    <div class="tools">
+      <span id="status" role="status"></span>
+      <button class="btn" id="theme" type="button">Dark</button>
+    </div>
+  </header>
+  <main>
+    <section class="card side" aria-label="Streamers">
+      <div class="sorts"><span>Sort by</span>
+        <button class="seg" type="button" data-sort="points">Points</button>
+        <button class="seg" type="button" data-sort="gain">Gain</button>
+        <button class="seg" type="button" data-sort="name">Name</button>
+      </div>
+      <ul id="list"><li class="empty">Loading…</li></ul>
+    </section>
+    <section class="card detail" aria-label="Points over time">
+      <div class="head">
+        <h2><span class="dot" id="d-dot"></span><a id="d-name" target="_blank" rel="noopener">–</a><span class="state" id="d-state"></span></h2>
+        <div class="stats" id="d-stats"></div>
+        <div class="ranges" role="group" aria-label="Date range">
+          <button class="seg" type="button" data-range="24h">24h</button>
+          <button class="seg" type="button" data-range="7d">7d</button>
+          <button class="seg" type="button" data-range="30d">30d</button>
+          <button class="seg" type="button" data-range="all">All</button>
+        </div>
+      </div>
+      <div class="plot" id="plot"><canvas id="cv" role="img" aria-label="Channel points over time"></canvas><div id="tip"></div></div>
+      <div class="legend" id="legend" aria-label="Event markers (click to show or hide)"></div>
+    </section>
+  </main>
+</div>
+<script>
+'use strict';
+const REFRESH_MS = 30000;
+const EV = {
+  WATCH_STREAK:     { label: 'Watch streak', color: '--ev-streak', shape: 'circle' },
+  CLAIM:            { label: 'Bonus claim',  color: '--ev-claim',  shape: 'circle' },
+  RAID:             { label: 'Raid',         color: '--ev-raid',   shape: 'circle' },
+  BET_WIN:          { label: 'Bet won',      color: '--ev-win',    shape: 'up' },
+  BET_LOSE:         { label: 'Bet lost',     color: '--ev-lose',   shape: 'down' },
+  BET_REFUND:       { label: 'Bet refund',   color: '--ev-refund', shape: 'diamond' },
+  DROP_CLAIM:       { label: 'Drop claim',   color: '--ev-drop',   shape: 'square' },
+  MOMENT_CLAIM:     { label: 'Moment claim', color: '--ev-drop',   shape: 'diamond' },
+  STREAMER_ONLINE:  { label: 'Online',       color: '--ink2',      shape: 'ring' },
+  STREAMER_OFFLINE: { label: 'Offline',      color: '--ink2',      shape: 'cross' },
+};
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d) { try { return localStorage.getItem('tcpm.' + k) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('tcpm.' + k, v); } catch {} },
+};
+const state = {
+  streamers: [], sel: decodeURIComponent(location.hash.slice(1)) || null,
+  range: store.get('range', '24h'), sort: store.get('sort', 'points'),
+  hidden: new Set(JSON.parse(store.get('hidden', '[]'))),
+  data: null, marks: [], hover: null, seq: 0,
+};
+const nf = new Intl.NumberFormat();
+const fmt = n => nf.format(n);
+const signed = n => (n > 0 ? '+' : n < 0 ? '−' : '') + fmt(Math.abs(n));
+const cls = n => (n > 0 ? 'up' : n < 0 ? 'down' : '');
+// Axis label: just enough decimals that neighbouring ticks (step apart) stay distinct.
+function compact(n, step) {
+  const a = Math.abs(n), unit = a >= 1e6 ? 1e6 : a >= 1e3 ? 1e3 : 1;
+  if (unit === 1) return String(n);
+  const digits = Math.min(3, Math.max(0, Math.ceil(-Math.log10(step / unit) - 1e-9)));
+  return +(n / unit).toFixed(digits) + (unit === 1e6 ? 'M' : 'k');
+}
+function el(tag, props, ...kids) {
+  const e = Object.assign(document.createElement(tag), props || {});
+  e.append(...kids);
+  return e;
+}
+
+/* ---------- theme ---------- */
+function setTheme(t) {
+  document.documentElement.dataset.theme = t;
+  $('theme').textContent = t === 'dark' ? 'Light' : 'Dark';
+  renderLegend(); draw();
+}
+$('theme').onclick = () => {
+  const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  store.set('theme', t); setTheme(t);
+};
+
+/* ---------- data ---------- */
+async function getJSON(url) {
+  const r = await fetch(url, { cache: 'no-store' });
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+async function loadList() {
+  const d = await getJSON('api/streamers');
+  state.streamers = d.streamers;
+  $('t-points').textContent = fmt(d.totals.points);
+  const g = $('t-gain'); g.textContent = signed(d.totals.session_gain); g.className = cls(d.totals.session_gain);
+  $('t-online').textContent = d.totals.online + ' / ' + d.totals.count;
+  if (!state.sel || !d.streamers.some(s => s.name === state.sel)) state.sel = sorted()[0]?.name || null;
+  renderList(); renderHead();
+}
+async function loadDetail(keepFrame) {
+  if (!state.sel) { state.data = null; draw(); return; }
+  const seq = ++state.seq;
+  if (!keepFrame) $('plot').classList.add('loading');
+  try {
+    const d = await getJSON('api/streamer/' + encodeURIComponent(state.sel) + '?range=' + state.range);
+    if (seq !== state.seq) return;
+    state.data = d;
+  } finally {
+    if (seq === state.seq) $('plot').classList.remove('loading');
+  }
+  renderHead(); renderLegend(); draw();
+}
+async function refresh(keepFrame) {
+  try {
+    await loadList(); await loadDetail(keepFrame);
+    $('status').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    $('status').textContent = 'Connection lost, retrying…';
+  }
+}
+
+/* ---------- list ---------- */
+function sorted() {
+  const by = { points: (a, b) => b.points - a.points, gain: (a, b) => b.session_gain - a.session_gain, name: () => 0 }[state.sort];
+  return [...state.streamers].sort((a, b) => by(a, b) || a.name.localeCompare(b.name));
+}
+function renderList() {
+  document.querySelectorAll('[data-sort]').forEach(b => b.setAttribute('aria-pressed', b.dataset.sort === state.sort));
+  const list = $('list');
+  const top = list.scrollTop;
+  if (!state.streamers.length) { list.replaceChildren(el('li', { className: 'empty', textContent: 'No data yet. Points appear once the miner has loaded your streamers.' })); return; }
+  list.replaceChildren(...sorted().map(s => {
+    const b = el('button', { type: 'button', title: s.online ? 'Online' : 'Offline' },
+      el('span', { className: 'dot' + (s.online ? ' on' : '') }),
+      el('span', { className: 'nm', textContent: s.name }),
+      el('span', { className: 'pts', textContent: fmt(s.points) }),
+      el('span', { className: 'gain ' + cls(s.session_gain), textContent: s.session_gain ? signed(s.session_gain) : '' }));
+    b.setAttribute('aria-current', s.name === state.sel);
+    b.onclick = () => select(s.name);
+    return el('li', null, b);
+  }));
+  list.scrollTop = top;
+}
+function select(name) {
+  if (name === state.sel) return;
+  state.sel = name; state.hover = null;
+  history.replaceState(null, '', '#' + encodeURIComponent(name));
+  renderList(); renderHead(); loadDetail(false).catch(() => {});
+}
+document.querySelectorAll('[data-sort]').forEach(b => b.onclick = () => { state.sort = b.dataset.sort; store.set('sort', state.sort); renderList(); });
+document.querySelectorAll('[data-range]').forEach(b => b.onclick = () => {
+  state.range = b.dataset.range; store.set('range', state.range); state.hover = null;
+  renderHead(); loadDetail(false).catch(() => {});
+});
+
+/* ---------- header + legend ---------- */
+function renderHead() {
+  document.querySelectorAll('[data-range]').forEach(b => b.setAttribute('aria-pressed', b.dataset.range === state.range));
+  const s = state.streamers.find(x => x.name === state.sel);
+  $('d-name').textContent = state.sel || 'No streamer selected';
+  if (state.sel) $('d-name').href = 'https://www.twitch.tv/' + encodeURIComponent(state.sel); else $('d-name').removeAttribute('href');
+  $('d-dot').className = 'dot' + (s?.online ? ' on' : '');
+  $('d-state').textContent = s ? (s.online ? 'Online' : 'Offline') : '';
+  const d = state.data, box = $('d-stats');
+  if (!s) { box.replaceChildren(); return; }
+  const item = (label, text, c) => el('span', null, label + ' ', el('b', { textContent: text, className: c || '' }));
+  const items = [item('Balance', fmt(s.points))];
+  if (d && d.name === state.sel && d.series.length) {
+    const label = { '24h': 'Last 24h', '7d': 'Last 7 days', '30d': 'Last 30 days', all: 'All time' }[d.range];
+    items.push(item(label, signed(d.stats.gain), cls(d.stats.gain)), item('Low', fmt(d.stats.min)), item('High', fmt(d.stats.max)));
+  }
+  box.replaceChildren(...items);
+}
+function renderLegend() {
+  const counts = {};
+  for (const e of state.data?.events || []) counts[e.type] = (counts[e.type] || 0) + 1;
+  const css = getComputedStyle(document.documentElement);
+  $('legend').replaceChildren(...Object.keys(EV).filter(t => counts[t]).map(t => {
+    const dot = el('i'); dot.style.background = css.getPropertyValue(EV[t].color);
+    const b = el('button', { type: 'button', className: 'chip' }, dot, EV[t].label, el('em', { textContent: fmt(counts[t]) }));
+    b.setAttribute('aria-pressed', !state.hidden.has(t));
+    b.onclick = () => {
+      state.hidden.has(t) ? state.hidden.delete(t) : state.hidden.add(t);
+      store.set('hidden', JSON.stringify([...state.hidden])); renderLegend(); draw();
+    };
+    return b;
+  }));
+}
+
+/* ---------- chart ---------- */
+const cv = $('cv'), ctx = cv.getContext('2d'), M = { l: 52, r: 16, t: 12, b: 26 };
+let geo = null;
+function niceTicks(lo, hi, n) {
+  if (hi <= lo) { lo -= 1; hi += 1; }
+  const raw = (hi - lo) / n, mag = 10 ** Math.floor(Math.log10(raw)), f = raw / mag;
+  const step = Math.max(1, (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * mag);
+  const a = Math.floor(lo / step) * step, b = Math.ceil(hi / step) * step, t = [];
+  for (let v = a; v <= b + step / 2; v += step) t.push(Math.round(v));
+  return t;
+}
+const MIN = 60000, HOUR = 60 * MIN, DAY = 24 * HOUR;
+const STEPS = [5 * MIN, 15 * MIN, 30 * MIN, HOUR, 2 * HOUR, 3 * HOUR, 6 * HOUR, 12 * HOUR, DAY, 2 * DAY, 7 * DAY, 14 * DAY, 30 * DAY, 90 * DAY, 180 * DAY, 365 * DAY];
+function timeTicks(from, to, maxCount) {
+  const step = STEPS.find(s => (to - from) / s <= maxCount) || STEPS[STEPS.length - 1];
+  const off = new Date(to).getTimezoneOffset() * MIN, t = [];
+  for (let v = Math.ceil((from - off) / step) * step + off; v <= to; v += step) t.push(v);
+  return { step, t };
+}
+function timeLabel(t, step) {
+  const d = new Date(t);
+  const day = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  if (step >= DAY) return day;
+  return d.getHours() === 0 && d.getMinutes() === 0 ? day : d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+function valueAt(series, t) {
+  let lo = 0, hi = series.length - 1;
+  if (!series.length || t < series[0][0]) return null;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; series[mid][0] <= t ? lo = mid : hi = mid - 1; }
+  return series[lo][1];
+}
+function shape(kind, x, y, r) {
+  ctx.beginPath();
+  if (kind === 'up') { ctx.moveTo(x, y - r * 1.2); ctx.lineTo(x + r * 1.1, y + r * .8); ctx.lineTo(x - r * 1.1, y + r * .8); ctx.closePath(); }
+  else if (kind === 'down') { ctx.moveTo(x, y + r * 1.2); ctx.lineTo(x + r * 1.1, y - r * .8); ctx.lineTo(x - r * 1.1, y - r * .8); ctx.closePath(); }
+  else if (kind === 'diamond') { ctx.moveTo(x, y - r * 1.25); ctx.lineTo(x + r * 1.25, y); ctx.lineTo(x, y + r * 1.25); ctx.lineTo(x - r * 1.25, y); ctx.closePath(); }
+  else if (kind === 'square') ctx.rect(x - r * .9, y - r * .9, r * 1.8, r * 1.8);
+  else if (kind === 'cross') { ctx.moveTo(x - r, y - r); ctx.lineTo(x + r, y + r); ctx.moveTo(x + r, y - r); ctx.lineTo(x - r, y + r); }
+  else ctx.arc(x, y, r, 0, Math.PI * 2);
+}
+function draw() {
+  const w = cv.clientWidth, h = cv.clientHeight, dpr = window.devicePixelRatio || 1;
+  if (!w || !h) return;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const css = getComputedStyle(document.documentElement), c = n => css.getPropertyValue(n).trim();
+  ctx.font = '11px system-ui, -apple-system, "Segoe UI", sans-serif';
+  const d = state.data;
+  state.marks = []; geo = null;
+  if (!d || !d.series.length) {
+    ctx.fillStyle = c('--muted'); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(d ? 'No data in this range yet' : 'Select a streamer', w / 2, h / 2);
+    $('tip').style.display = 'none';
+    return;
+  }
+  const S = d.series, x0 = M.l, x1 = w - M.r, y0 = M.t, y1 = h - M.b;
+  const span = Math.max(1, d.to - d.from);
+  const pad = Math.max(1, (d.stats.max - d.stats.min) * 0.08);
+  const yt = niceTicks(d.stats.min - pad, d.stats.max + pad, Math.max(2, Math.floor((y1 - y0) / 56)));
+  const lo = yt[0], hi = yt[yt.length - 1];
+  const X = t => x0 + (t - d.from) / span * (x1 - x0), Y = v => y1 - (v - lo) / (hi - lo) * (y1 - y0);
+  geo = { X, Y, x0, x1, y0, y1, d };
+
+  // grid + axes
+  ctx.lineWidth = 1; ctx.fillStyle = c('--muted'); ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
+  for (const v of yt) {
+    const y = Math.round(Y(v)) + .5;
+    ctx.strokeStyle = v === lo ? c('--axis') : c('--grid');
+    ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
+    ctx.fillText(compact(v, yt[1] - yt[0]), x0 - 8, y);
+  }
+  const tt = timeTicks(d.from, d.to, Math.max(2, Math.floor((x1 - x0) / 90)));
+  ctx.textBaseline = 'top'; ctx.textAlign = 'center';
+  for (const t of tt.t) {
+    const x = X(t);
+    if (x < x0 + 18 || x > x1 - 18) continue;
+    ctx.fillText(timeLabel(t, tt.step), x, y1 + 8);
+  }
+
+  // step line: a balance holds until the next sample
+  ctx.beginPath();
+  ctx.moveTo(X(S[0][0]), Y(S[0][1]));
+  for (let i = 1; i < S.length; i++) { ctx.lineTo(X(S[i][0]), Y(S[i - 1][1])); ctx.lineTo(X(S[i][0]), Y(S[i][1])); }
+  ctx.lineTo(x1, Y(S[S.length - 1][1]));
+  ctx.strokeStyle = c('--line'); ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
+  ctx.lineTo(x1, y1); ctx.lineTo(X(S[0][0]), y1); ctx.closePath();
+  ctx.globalAlpha = .08; ctx.fillStyle = c('--line'); ctx.fill(); ctx.globalAlpha = 1;
+
+  // event markers sit on the line
+  const shown = d.events.filter(e => EV[e.type] && !state.hidden.has(e.type) && e.t >= d.from);
+  const dense = shown.length > 300, r = dense ? 2.5 : 4;
+  for (const e of shown) {
+    const v = valueAt(S, e.t);
+    const m = { x: X(e.t), y: Y(v ?? S[0][1]), e };
+    state.marks.push(m);
+    const k = EV[e.type], col = c(k.color);
+    shape(k.shape, m.x, m.y, r);
+    if (k.shape === 'ring' || k.shape === 'cross') {
+      if (k.shape === 'ring') { ctx.fillStyle = c('--surface'); ctx.fill(); }
+      ctx.strokeStyle = col; ctx.lineWidth = dense ? 1.5 : 2; ctx.stroke();
+    } else {
+      if (!dense) { ctx.strokeStyle = c('--surface'); ctx.lineWidth = 2; ctx.stroke(); }
+      ctx.fillStyle = col; ctx.fill();
+    }
+  }
+  drawHover(c);
+}
+function drawHover(c) {
+  const tip = $('tip'), hv = state.hover;
+  if (!hv || !geo) { tip.style.display = 'none'; return; }
+  const { X, Y, x0, x1, y0, y1, d } = geo;
+  let near = null, best = 14 * 14;
+  for (const m of state.marks) {
+    const q = (m.x - hv.x) ** 2 + (m.y - hv.y) ** 2;
+    if (q <= best) { best = q; near = m; }
+  }
+  const px = near ? near.x : Math.min(x1, Math.max(x0, hv.x));
+  const t = near ? near.e.t : d.from + (px - x0) / (x1 - x0) * (d.to - d.from);
+  const v = valueAt(d.series, t);
+  ctx.strokeStyle = c('--axis'); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(Math.round(px) + .5, y0); ctx.lineTo(Math.round(px) + .5, y1); ctx.stroke();
+  if (v !== null && !near) {
+    ctx.beginPath(); ctx.arc(px, Y(v), 4, 0, Math.PI * 2);
+    ctx.fillStyle = c('--line'); ctx.fill(); ctx.strokeStyle = c('--surface'); ctx.lineWidth = 2; ctx.stroke();
+  }
+  const when = new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const rows = [el('div', { className: 'v', textContent: v === null ? 'No data' : fmt(v) + ' points' }), el('div', { className: 't', textContent: when })];
+  if (near) {
+    const k = EV[near.e.type], dot = el('i'); dot.style.background = c(k.color);
+    rows.push(el('div', { className: 'e' }, dot, el('div', null, el('b', { textContent: k.label }), el('div', { className: 'm', textContent: near.e.msg }))));
+  }
+  tip.replaceChildren(...rows);
+  tip.style.display = 'block';
+  const box = $('plot').getBoundingClientRect(), tw = tip.offsetWidth, th = tip.offsetHeight;
+  let left = px + 14; if (left + tw > box.width - 4) left = px - tw - 14;
+  tip.style.left = Math.max(4, left) + 'px';
+  tip.style.top = Math.max(4, Math.min(box.height - th - 4, hv.y - th - 12)) + 'px';
+}
+let raf = 0;
+const redraw = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); };
+cv.addEventListener('pointermove', e => { const b = cv.getBoundingClientRect(); state.hover = { x: e.clientX - b.left, y: e.clientY - b.top }; redraw(); });
+cv.addEventListener('pointerleave', () => { state.hover = null; redraw(); });
+new ResizeObserver(redraw).observe($('plot'));
+
+/* ---------- boot ---------- */
+setTheme(store.get('theme', matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+refresh(false);
+setInterval(() => { if (!document.hidden) refresh(true); }, REFRESH_MS);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(true); });
+</script>
+</body>
+</html>

@@ -200,6 +200,7 @@ type config struct {
 	Timezone                   *string       `json:"timezone"`
 	Privacy                    privacyConfig `json:"privacy"`
 	Discord                    discordConfig `json:"discord"`
+	Analytics                  analyticsConfig `json:"analytics"`
 
 	StreamerOverrides map[string]streamerSettingsConfig `json:"streamer_overrides"`
 }
@@ -363,6 +364,7 @@ func defaultConfig() map[string]interface{} {
 			"webhook_api": "",
 			"events":      []interface{}{},
 		},
+		"analytics":         defaultAnalyticsConfig(),
 		"streamers":         []interface{}{},
 		"streamers_exclude": []interface{}{},
 		"game_priority":     []interface{}{},
@@ -580,7 +582,7 @@ func main() {
 		log.Fatalf("failed to load config: %v", err)
 	}
 
-	if cfg.AutoUpdate {
+	if cfg.AutoUpdate && !autoUpdateDisabledByEnv() {
 		updated, err := miner.RunAutoUpdate()
 		if err != nil {
 			log.Printf("auto-update failed: %v", err)
@@ -635,6 +637,7 @@ func main() {
 		cfg.WatchStreakWarmStartCache,
 		cfg.ShowDropsProgress,
 	)
+	startAnalytics(cfg.Analytics, logger)
 
 	if len(cfg.Streamers) > 0 {
 		minr.Mine(cfg.Streamers)

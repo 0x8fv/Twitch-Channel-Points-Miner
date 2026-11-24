@@ -1,0 +1,96 @@
+name: docker
+
+# Keeps the fork in sync with upstream and publishes the image to GHCR.
+#   push to main      -> build
+#   schedule/dispatch -> sync with upstream, then build in the same run
+#                        (pushes made with GITHUB_TOKEN do not trigger workflows)
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild even if the image for this commit already exists
+        type: boolean
+        default: false
+  schedule:
+    - cron: "17 4 * * *"
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: docker
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync with upstream
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge upstream into main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! out=$(gh api -X POST "repos/${GITHUB_REPOSITORY}/merge-upstream" -f branch=main 2>&1); then
+            echo "::error title=Upstream sync failed::main could not be merged with upstream (merge conflict, or upstream changed workflow files, which GITHUB_TOKEN may not push). Resolve it manually. API response: ${out}"
+            exit 1
+          fi
+          echo "${out}"
+
+  build:
+    name: Build and push image
+    needs: sync
+    # Runs after a successful sync, or directly on push (sync skipped). A failed sync stops here.
+    if: ${{ !cancelled() && (needs.sync.result == 'success' || needs.sync.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # After a sync the branch tip is newer than the commit that started this run.
+          ref: ${{ github.event_name == 'push' && github.sha || 'main' }}
+
+      - name: Resolve image name and tags
+        id: meta
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/twitch-channel-points-miner"
+          sha="$(git rev-parse --short=7 HEAD)"
+          echo "image=${image}" >> "$GITHUB_OUTPUT"
+          echo "sha_tag=${image}:sha-${sha}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Check for an existing image of this commit
+        id: existing
+        run: |
+          if [ "${{ inputs.force }}" != "true" ] && docker manifest inspect "${{ steps.meta.outputs.sha_tag }}" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "${{ steps.meta.outputs.sha_tag }} already exists, nothing to build." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/setup-qemu-action@v3
+        if: steps.existing.outputs.skip != 'true'
+
+      - uses: docker/setup-buildx-action@v3
+        if: steps.existing.outputs.skip != 'true'
+
+      - uses: docker/build-push-action@v6
+        if: steps.existing.outputs.skip != 'true'
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}:latest
+            ${{ steps.meta.outputs.sha_tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

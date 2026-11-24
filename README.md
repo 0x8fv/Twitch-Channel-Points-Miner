@@ -102,6 +102,41 @@ When running a prebuilt binary, the miner uses `./config.json` if it exists in t
   - `delay_mode` / `delay`: When to place the bet (default `FROM_END`, 6 seconds).
   - `filter_condition`: Optional object to skip betting unless a live metric meets your rule. Example: `{ "by": "TOTAL_USERS", "where": "GTE", "value": 50 }` to skip bets until at least 50 users participate. `by` supports `PERCENTAGE_USERS`, `ODDS`, `ODDS_PERCENTAGE`, `TOP_POINTS`, `TOTAL_USERS`, `TOTAL_POINTS`; `where` supports `GT`, `LT`, `GTE`, `LTE`.
 
+## Analytics dashboard
+A small built-in web dashboard (no external assets) shows every streamer's balance, session gain and online state, plus a points-over-time chart (24h / 7d / 30d / all) with markers for watch streaks, bonus claims, raids, bet results, drop and moment claims, and online/offline changes.
+
+- Enabled by default: `"analytics": { "enabled": true, "host": "0.0.0.0", "port": 5000 }` in `config.json`. Open `http://localhost:5000`. Set `enabled` to `false` to turn it off, or `host` to `127.0.0.1` to keep it local.
+- `TCPM_ANALYTICS_ADDR` (e.g. `127.0.0.1:8080`) overrides `host`/`port`.
+- Data is stored as append-only JSONL files in `analytics/` inside the data directory (`<streamer>.points.jsonl`, `<streamer>.events.jsonl`); delete a file to reset a streamer's history.
+- The dashboard has no login and always shows real streamer names, even with `privacy.anonymize_logs`. Do not expose the port to the internet.
+- JSON API: `GET /api/streamers` and `GET /api/streamer/{name}?range=24h|7d|30d|all`.
+
+## Docker
+A multi-arch image (`linux/amd64`, `linux/arm64`) is published to GHCR on every change to `main`; a daily workflow first merges upstream into the fork. Replace `OWNER` with the lowercase GitHub account that owns the fork.
+
+```sh
+docker run -d --name twitch-miner --restart unless-stopped \
+  -v twitch-miner-data:/data -p 5000:5000 \
+  ghcr.io/OWNER/twitch-channel-points-miner:latest
+```
+
+```yaml
+services:
+  twitch-miner:
+    image: ghcr.io/OWNER/twitch-channel-points-miner:latest
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/data
+```
+
+- Everything persistent lives in `/data`: `config.json`, `cookies/`, `log/` and `analytics/`. The container runs as UID 1000, so a bind-mounted folder must be writable by it (`chown -R 1000:1000 ./data`); a named volume needs nothing.
+- First start: the container writes a default `/data/config.json`. Edit it (at least `username`), then `docker restart twitch-miner`. Or place your `config.json` in the folder before the first start.
+- First login: run `docker logs -f twitch-miner`, open `https://www.twitch.tv/activate` and enter the device code shown in the logs. The session is saved to `/data/cookies`, so this is only needed once.
+- The self-updater is disabled inside the image (`TCPM_DISABLE_AUTO_UPDATE=1`) whatever `auto_update` says; update with `docker pull` (or `docker compose pull && docker compose up -d`).
+- Set `TZ` (e.g. `-e TZ=Europe/Madrid`) or the `timezone` config key for local timestamps.
+
 ## How it works
 - Authenticates via Twitch device flow, persists cookies per user, and refreshes the client build id for GQL calls.
 - Loads channel points context to grab balances and blue chests; watches two live streams at a time for minute-watched events to keep streaks active.
