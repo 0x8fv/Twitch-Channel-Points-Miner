@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"testing"
 )
@@ -31,6 +32,18 @@ func TestAutoUpdateDisabledByEnv(t *testing.T) {
 		t.Setenv("TCPM_DISABLE_AUTO_UPDATE", value)
 		if got := autoUpdateDisabledByEnv(); got != want {
 			t.Fatalf("TCPM_DISABLE_AUTO_UPDATE=%q got %v, want %v", value, got, want)
+		}
+	}
+}
+
+func TestTelegramConfigChatIDAcceptsNumberOrString(t *testing.T) {
+	for raw, want := range map[string]string{`-1001234567890`: "-1001234567890", `"@mychannel"`: "@mychannel", `" 42 "`: "42", `null`: ""} {
+		var cfg telegramConfig
+		if err := json.Unmarshal([]byte(`{"chat_id":`+raw+`,"token":"t"}`), &cfg); err != nil {
+			t.Fatalf("chat_id %s: %v", raw, err)
+		}
+		if got := cfg.settings().ChatID; got != want {
+			t.Fatalf("chat_id %s got %q, want %q", raw, got, want)
 		}
 	}
 }

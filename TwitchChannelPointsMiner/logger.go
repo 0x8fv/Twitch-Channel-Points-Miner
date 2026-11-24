@@ -120,6 +120,7 @@ func (l *Logger) logEvent(level, emoji string, event constants.Event, format str
 	}
 	if event != "" {
 		analyticsEmitEvent(event, message)
+		telegramEmitEvent(event, message)
 	}
 	timestampFormat := "15:04 02/01/06"
 	if l.settings.ShowSeconds {

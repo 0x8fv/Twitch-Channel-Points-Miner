@@ -201,6 +201,7 @@ type config struct {
 	Privacy                    privacyConfig `json:"privacy"`
 	Discord                    discordConfig `json:"discord"`
 	Analytics                  analyticsConfig `json:"analytics"`
+	Telegram                   telegramConfig `json:"telegram"`
 
 	StreamerOverrides map[string]streamerSettingsConfig `json:"streamer_overrides"`
 }
@@ -365,6 +366,7 @@ func defaultConfig() map[string]interface{} {
 			"events":      []interface{}{},
 		},
 		"analytics":         defaultAnalyticsConfig(),
+		"telegram":          defaultTelegramConfig(),
 		"streamers":         []interface{}{},
 		"streamers_exclude": []interface{}{},
 		"game_priority":     []interface{}{},
@@ -638,6 +640,7 @@ func main() {
 		cfg.ShowDropsProgress,
 	)
 	startAnalytics(cfg.Analytics, logger)
+	miner.SetTelegram(cfg.Telegram.settings())
 
 	if len(cfg.Streamers) > 0 {
 		minr.Mine(cfg.Streamers)
