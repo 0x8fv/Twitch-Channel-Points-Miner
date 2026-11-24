@@ -113,18 +113,22 @@ A small built-in web dashboard (no external assets) shows every streamer's balan
 - JSON API: `GET /api/streamers` and `GET /api/streamer/{name}?range=24h|7d|30d|all`.
 
 ## Docker
-A multi-arch image (`linux/amd64`, `linux/arm64`) is published to GHCR on every change to `main`; a daily workflow first merges upstream into the fork. Replace `OWNER` with the lowercase GitHub account that owns the fork.
+The repository ships a multi-stage `Dockerfile` (static binary, Alpine runtime, non-root). Build the image from the repository root:
+
+```sh
+docker build -t twitch-channel-points-miner .
+```
 
 ```sh
 docker run -d --name twitch-miner --restart unless-stopped \
   -v twitch-miner-data:/data -p 5000:5000 \
-  ghcr.io/OWNER/twitch-channel-points-miner:latest
+  twitch-channel-points-miner
 ```
 
 ```yaml
 services:
   twitch-miner:
-    image: ghcr.io/OWNER/twitch-channel-points-miner:latest
+    build: .
     restart: unless-stopped
     ports:
       - "5000:5000"
@@ -135,7 +139,7 @@ services:
 - Everything persistent lives in `/data`: `config.json`, `cookies/`, `log/` and `analytics/`. The container runs as UID 1000, so a bind-mounted folder must be writable by it (`chown -R 1000:1000 ./data`); a named volume needs nothing.
 - First start: the container writes a default `/data/config.json`. Edit it (at least `username`), then `docker restart twitch-miner`. Or place your `config.json` in the folder before the first start.
 - First login: run `docker logs -f twitch-miner`, open `https://www.twitch.tv/activate` and enter the device code shown in the logs. The session is saved to `/data/cookies`, so this is only needed once.
-- The self-updater is disabled inside the image (`TCPM_DISABLE_AUTO_UPDATE=1`) whatever `auto_update` says; update with `docker pull` (or `docker compose pull && docker compose up -d`).
+- The self-updater is disabled inside the image (`TCPM_DISABLE_AUTO_UPDATE=1`) whatever `auto_update` says; update by rebuilding the image from a newer checkout.
 - Set `TZ` (e.g. `-e TZ=Europe/Madrid`) or the `timezone` config key for local timestamps.
 
 ## How it works
