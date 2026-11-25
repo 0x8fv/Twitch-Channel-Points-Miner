@@ -1,9 +1,17 @@
 name: docker
 
-# Publishes the image to GHCR on every push to main.
+# Publishes the image to GHCR on every push to main. A pull request that touches
+# what the image is made from builds it without publishing.
 on:
   push:
     branches: [main]
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - go.mod
+      - go.sum
+      - .github/workflows/docker.yml
   workflow_dispatch:
     inputs:
       force:
@@ -15,16 +23,26 @@ permissions:
   contents: read
   packages: write
 
+# A newer commit on the same branch replaces the build in progress.
 concurrency:
-  group: docker
-  cancel-in-progress: false
+  group: docker-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     name: Build and push image
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BUDGET_SECONDS: 90
+      PUBLISH: ${{ github.event_name != 'pull_request' }}
     steps:
+      - name: Start the clock
+        run: echo "JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v4
+        with:
+          filter: blob:none
 
       - name: Resolve image name and tags
         id: meta
@@ -35,6 +53,7 @@ jobs:
           echo "sha_tag=${image}:sha-${sha}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/login-action@v3
+        if: env.PUBLISH == 'true'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -42,6 +61,7 @@ jobs:
 
       - name: Check for an existing image of this commit
         id: existing
+        if: env.PUBLISH == 'true'
         run: |
           if [ "${{ inputs.force }}" != "true" ] && docker manifest inspect "${{ steps.meta.outputs.sha_tag }}" >/dev/null 2>&1; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -49,9 +69,6 @@ jobs:
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
-
-      - uses: docker/setup-qemu-action@v3
-        if: steps.existing.outputs.skip != 'true'
 
       - uses: docker/setup-buildx-action@v3
         if: steps.existing.outputs.skip != 'true'
@@ -61,9 +78,35 @@ jobs:
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: ${{ env.PUBLISH == 'true' }}
           tags: |
             ${{ steps.meta.outputs.image }}:latest
             ${{ steps.meta.outputs.sha_tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # The published image has to start: the dashboard line is the first thing
+      # the miner prints once its config and data folder are in place.
+      - name: Start the published image
+        if: env.PUBLISH == 'true' && steps.existing.outputs.skip != 'true'
+        run: |
+          set -u
+          docker run -d --name smoke "${{ steps.meta.outputs.sha_tag }}" >/dev/null
+          started=1
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            if docker logs smoke 2>&1 | grep -q "Analytics dashboard listening on http://0.0.0.0:5000"; then
+              started=0
+              break
+            fi
+            sleep 0.5
+          done
+          docker logs smoke 2>&1 | head -5
+          docker rm -f smoke >/dev/null
+          if [ "$started" -ne 0 ]; then
+            echo "::error::the published image did not start"
+            exit 1
+          fi
+
+      - name: Budget
+        if: always()
+        run: sh ci/budget.sh
