@@ -6,9 +6,10 @@ import (
 	"time"
 
 	"TwitchChannelPointsMiner/internal/domain"
+	"TwitchChannelPointsMiner/internal/twitchapi"
 )
 
-func (t *Twitch) CheckStreamerOnline(streamer *domain.Streamer) (bool, error) {
+func (t *Client) CheckStreamerOnline(streamer *domain.Streamer) (bool, error) {
 	info, err := t.streamInfoOverlay(streamer.Username, streamer.ChannelID)
 	if err == ErrStreamerOffline {
 		streamer.IsOnline = false
@@ -28,7 +29,7 @@ func (t *Twitch) CheckStreamerOnline(streamer *domain.Streamer) (bool, error) {
 		info.Tags,
 		info.ViewersCount,
 		info.CreatedAt,
-		DropID,
+		twitchapi.DropID,
 	)
 	streamer.IsOnline = true
 	streamer.OnlineAt = time.Now()
@@ -36,11 +37,11 @@ func (t *Twitch) CheckStreamerOnline(streamer *domain.Streamer) (bool, error) {
 }
 
 // ? IsStreamLive performs a lightweight live check without refreshing stream metadata.
-func (t *Twitch) IsStreamLive(channelID string) (bool, error) {
+func (t *Client) IsStreamLive(channelID string) (bool, error) {
 	if channelID == "" {
 		return false, fmt.Errorf("missing channel id")
 	}
-	op := ClonePersistedOperation(GQLOperations.WithIsStreamLiveQuery)
+	op := twitchapi.ClonePersistedOperation(twitchapi.GQLOperations.WithIsStreamLiveQuery)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -77,11 +78,11 @@ func parseRFC3339Timestamp(value string) time.Time {
 	return parsed
 }
 
-func (t *Twitch) fallbackStreamCreatedAt(channelID string) time.Time {
+func (t *Client) fallbackStreamCreatedAt(channelID string) time.Time {
 	if channelID == "" {
 		return time.Time{}
 	}
-	op := ClonePersistedOperation(GQLOperations.WithIsStreamLiveQuery)
+	op := twitchapi.ClonePersistedOperation(twitchapi.GQLOperations.WithIsStreamLiveQuery)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -97,11 +98,11 @@ func (t *Twitch) fallbackStreamCreatedAt(channelID string) time.Time {
 	return parseRFC3339Timestamp(resp.Data.User.Stream.CreatedAt)
 }
 
-func (t *Twitch) LogExtraInfo(channelID string, online bool) string {
+func (t *Client) LogExtraInfo(channelID string, online bool) string {
 	if channelID == "" {
 		return ""
 	}
-	op := ClonePersistedOperation(GQLOperations.RewardList)
+	op := twitchapi.ClonePersistedOperation(twitchapi.GQLOperations.RewardList)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -126,9 +127,9 @@ func (t *Twitch) LogExtraInfo(channelID string, online bool) string {
 	return extrainfoSuffix
 }
 
-func (t *Twitch) streamInfoOverlay(username, channelID string) (*streamInfoResult, error) {
+func (t *Client) streamInfoOverlay(username, channelID string) (*streamInfoResult, error) {
 	username = strings.ToLower(strings.TrimSpace(username))
-	op := ClonePersistedOperation(GQLOperations.VideoPlayerStreamInfoOverlay)
+	op := twitchapi.ClonePersistedOperation(twitchapi.GQLOperations.VideoPlayerStreamInfoOverlay)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -157,7 +158,7 @@ func (t *Twitch) streamInfoOverlay(username, channelID string) (*streamInfoResul
 	}, nil
 }
 
-func (t *Twitch) streamInfo(streamer *domain.Streamer) (*streamInfoResult, error) {
+func (t *Client) streamInfo(streamer *domain.Streamer) (*streamInfoResult, error) {
 	result, err := t.streamInfoOverlay(streamer.Username, streamer.ChannelID)
 	if err != nil {
 		return nil, err
@@ -170,7 +171,7 @@ func (t *Twitch) streamInfo(streamer *domain.Streamer) (*streamInfoResult, error
 }
 
 // ? UpdateStream refreshes metadata and payload required for minute-watched events.
-func (t *Twitch) UpdateStream(streamer *domain.Streamer) error {
+func (t *Client) UpdateStream(streamer *domain.Streamer) error {
 	if streamer.Stream == nil {
 		streamer.Stream = domain.NewStream()
 	}
@@ -190,7 +191,7 @@ func (t *Twitch) UpdateStream(streamer *domain.Streamer) error {
 		info.Tags,
 		info.ViewersCount,
 		info.CreatedAt,
-		DropID,
+		twitchapi.DropID,
 	)
 	if info.WatchStreakComplete {
 		streamer.CompletedWatchStreak = true

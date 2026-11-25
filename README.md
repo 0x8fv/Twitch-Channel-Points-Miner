@@ -144,15 +144,23 @@ Folders are named after what the code is about, and each file has one job.
 | Folder | What it holds |
 |---|---|
 | `cmd/twitch-miner` | The program entry point: paths, console setup and `config.json` loading. |
-| `internal/miner` | The miner itself: watching streams, watch streaks, drops, points, presence, and the console logger. |
-| `internal/twitch` | Everything that talks to Twitch: login, GQL, streams, minute-watched, drops, predictions, PubSub and chat. |
+| `internal/miner` | The miner itself: the session, choosing who to watch, watch streaks, points, presence and identity repair. |
+| `internal/streak` | Watch-streak rules that stand on their own, and the warm-start cache. |
+| `internal/drops` | Claiming drops and reporting their progress. |
+| `internal/twitch` | The Twitch client: GQL, users, streams, minute-watched, drops inventory, channel points. |
+| `internal/twitchapi` | Twitch seen from outside: endpoints, client identity, persisted GQL operations, user agents. |
+| `internal/auth` | Device login and the cookie store. |
+| `internal/pubsub` | The PubSub connection and what each message does. |
+| `internal/prediction` | Prediction events: deciding, filtering and formatting bets. |
+| `internal/chat` | The IRC chat client and when to be present in a chat. |
 | `internal/domain` | The things being mined: streamers, streams, bet and streamer settings, community goals. |
 | `internal/events` | The event types the miner reports, with their polarity and glyph. |
+| `internal/logging` | The console logger; notifiers and the dashboard subscribe to its events. |
 | `internal/notify` | Discord and Telegram notifications and the sentences they send. |
 | `internal/dashboard` | The analytics store, its HTTP API and the web page. |
 | `internal/privacy` | Log anonymisation. |
 | `internal/update` | The self-updater. |
-| `internal/ansi`, `internal/jsonfile` | Console colours; writing JSON files. |
+| `internal/ansi`, `internal/jsonfile`, `internal/jsonvalue`, `internal/random` | Console colours; writing JSON files; reading loose JSON values; nonces and jitter. |
 
 ## How it works
 - Authenticates via Twitch device flow, persists cookies per user, and refreshes the client build id for GQL calls.

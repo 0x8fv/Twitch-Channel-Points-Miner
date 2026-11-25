@@ -5,16 +5,17 @@ import (
 	"time"
 
 	"TwitchChannelPointsMiner/internal/domain"
+	"TwitchChannelPointsMiner/internal/streak"
 )
 
 func TestStreakPriorityLimit(t *testing.T) {
 	m := &Miner{}
 	now := time.Now()
-	if got := m.streakPriorityLimit(now); got != streakPriorityMinutesBase {
+	if got := m.streakPriorityLimit(now); got != streak.PriorityMinutesBase {
 		t.Fatalf("zero start uses base got %f", got)
 	}
 	m.startedAt = now.Add(-11 * time.Hour)
-	if got := m.streakPriorityLimit(now); got != streakPriorityMinutesExtended {
+	if got := m.streakPriorityLimit(now); got != streak.PriorityMinutesExtended {
 		t.Fatalf("long session uses extended got %f", got)
 	}
 }
@@ -127,7 +128,7 @@ func TestResolveTimedOutStreak(t *testing.T) {
 		},
 		Stream: &domain.Stream{
 			WatchStreakMissing: true,
-			MinuteWatched:      streakPriorityMinutesBase,
+			MinuteWatched:      streak.PriorityMinutesBase,
 		},
 	}
 
@@ -156,7 +157,7 @@ func TestResolveTimedOutStreakShortRestartStillPrioritizesStreak(t *testing.T) {
 		},
 		Stream: &domain.Stream{
 			WatchStreakMissing: true,
-			MinuteWatched:      streakPriorityMinutesBase,
+			MinuteWatched:      streak.PriorityMinutesBase,
 			StreamUpAt:         now.Add(-15 * time.Minute),
 			CreatedAt:          now.Add(-15 * time.Minute),
 		},

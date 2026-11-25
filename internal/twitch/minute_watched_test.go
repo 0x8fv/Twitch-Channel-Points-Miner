@@ -4,20 +4,23 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"TwitchChannelPointsMiner/internal/auth"
+	"TwitchChannelPointsMiner/internal/twitchapi"
 )
 
 func TestSendMinuteWatchedRequestsStreamSegments(t *testing.T) {
 	for _, status := range []int{http.StatusOK, http.StatusServiceUnavailable} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			var heads []string
-			logger := &stubPubSubLogger{}
-			twitch := &Twitch{
+			logger := &stubLogger{}
+			twitch := &Client{
 				logger:         logger,
 				userAgent:      "fixture",
-				clientVersion:  ClientVersion,
+				clientVersion:  twitchapi.ClientVersion,
 				versionFetched: time.Now(),
 				versionTTL:     time.Hour,
-				twitchLogin:    &TwitchLogin{Token: "token"},
+				twitchLogin:    &auth.Login{Token: "token"},
 				client: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 					switch {
 					case req.URL.Host == "gql.twitch.tv":

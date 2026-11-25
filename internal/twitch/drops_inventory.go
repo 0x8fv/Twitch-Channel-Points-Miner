@@ -2,19 +2,21 @@ package twitch
 
 import (
 	"strings"
+
+	"TwitchChannelPointsMiner/internal/jsonvalue"
 )
 
 func campaignNameFromInventory(campaign map[string]interface{}) string {
 	if campaign == nil {
 		return ""
 	}
-	if name := mapStringValue(campaign, "name", "displayName", "gameDisplayName"); name != "" {
+	if name := jsonvalue.FirstString(campaign, "name", "displayName", "gameDisplayName"); name != "" {
 		return name
 	}
-	if name, _ := navigate(campaign, "game.displayName").(string); name != "" {
+	if name, _ := jsonvalue.At(campaign, "game.displayName").(string); name != "" {
 		return name
 	}
-	if name, _ := navigate(campaign, "game.name").(string); name != "" {
+	if name, _ := jsonvalue.At(campaign, "game.name").(string); name != "" {
 		return name
 	}
 	return ""
@@ -25,14 +27,14 @@ func rewardNameFromInventory(drop map[string]interface{}) string {
 		return ""
 	}
 	if benefit, ok := drop["benefit"].(map[string]interface{}); ok {
-		if name := mapStringValue(benefit, "name", "displayName"); name != "" {
+		if name := jsonvalue.FirstString(benefit, "name", "displayName"); name != "" {
 			return name
 		}
 	}
-	if name := mapStringValue(drop, "name", "displayName"); name != "" {
+	if name := jsonvalue.FirstString(drop, "name", "displayName"); name != "" {
 		return name
 	}
-	if name, _ := navigate(drop, "benefit.edges.0.node.name").(string); name != "" {
+	if name, _ := jsonvalue.At(drop, "benefit.edges.0.node.name").(string); name != "" {
 		return name
 	}
 	return ""
@@ -65,7 +67,7 @@ func dropStatusesFromInventory(inv map[string]interface{}) []DropStatus {
 			claimed, _ := self["isClaimed"].(bool)
 			current, required := dropProgress(inner, self)
 			statuses = append(statuses, DropStatus{
-				DropInstanceID: mapStringValue(self, "dropInstanceID"),
+				DropInstanceID: jsonvalue.FirstString(self, "dropInstanceID"),
 				RewardName:     rewardNameFromInventory(inner),
 				CampaignName:   campaignName,
 				GameName:       gameName,
@@ -85,22 +87,22 @@ func gameNameFromInventory(campaign map[string]interface{}) string {
 		return ""
 	}
 	if game, ok := campaign["game"].(map[string]interface{}); ok {
-		if name := mapStringValue(game, "displayName", "name"); name != "" {
+		if name := jsonvalue.FirstString(game, "displayName", "name"); name != "" {
 			return name
 		}
 	}
-	return mapStringValue(campaign, "gameDisplayName", "gameName")
+	return jsonvalue.FirstString(campaign, "gameDisplayName", "gameName")
 }
 
 func channelNameFromInventory(campaign map[string]interface{}) string {
 	if campaign == nil {
 		return ""
 	}
-	if name := mapStringValue(campaign, "channelLogin", "channelName", "channelDisplayName"); name != "" {
+	if name := jsonvalue.FirstString(campaign, "channelLogin", "channelName", "channelDisplayName"); name != "" {
 		return name
 	}
 	for _, path := range []string{"channel.login", "channel.name", "channel.displayName"} {
-		if name, _ := navigate(campaign, path).(string); strings.TrimSpace(name) != "" {
+		if name, _ := jsonvalue.At(campaign, path).(string); strings.TrimSpace(name) != "" {
 			return strings.TrimSpace(name)
 		}
 	}
@@ -122,11 +124,11 @@ func channelNameFromList(raw interface{}) string {
 		if !ok {
 			continue
 		}
-		if name := mapStringValue(channel, "login", "name", "displayName"); name != "" {
+		if name := jsonvalue.FirstString(channel, "login", "name", "displayName"); name != "" {
 			return name
 		}
 		for _, path := range []string{"channel.login", "channel.name", "channel.displayName"} {
-			if name, _ := navigate(channel, path).(string); strings.TrimSpace(name) != "" {
+			if name, _ := jsonvalue.At(channel, path).(string); strings.TrimSpace(name) != "" {
 				return strings.TrimSpace(name)
 			}
 		}
@@ -149,10 +151,10 @@ func dropClaimable(drop map[string]interface{}, self map[string]interface{}, cur
 }
 
 func dropProgress(drop map[string]interface{}, self map[string]interface{}) (int, int) {
-	current := mapIntValue(self, "currentMinutesWatched", "currentSecondsWatched", "currentProgress", "currentAmount")
-	required := mapIntValue(drop, "requiredMinutesWatched", "requiredSecondsWatched", "requiredProgress", "requiredAmount")
+	current := jsonvalue.FirstInt(self, "currentMinutesWatched", "currentSecondsWatched", "currentProgress", "currentAmount")
+	required := jsonvalue.FirstInt(drop, "requiredMinutesWatched", "requiredSecondsWatched", "requiredProgress", "requiredAmount")
 	if required == 0 {
-		required = mapIntValue(self, "requiredMinutesWatched", "requiredSecondsWatched")
+		required = jsonvalue.FirstInt(self, "requiredMinutesWatched", "requiredSecondsWatched")
 	}
 	return current, required
 }

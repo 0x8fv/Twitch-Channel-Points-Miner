@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"TwitchChannelPointsMiner/internal/domain"
+	"TwitchChannelPointsMiner/internal/logging"
 )
 
 func TestNormalizeGameList(t *testing.T) {
@@ -52,7 +53,7 @@ func TestNewMinerDisableAtInNicknameSetting(t *testing.T) {
 		"",
 		false,
 		false,
-		LoggerSettings{},
+		logging.LoggerSettings{},
 		streamerSettings,
 		nil,
 		nil,

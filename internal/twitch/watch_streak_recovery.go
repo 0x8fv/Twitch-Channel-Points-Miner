@@ -6,9 +6,12 @@ import (
 	"time"
 
 	"TwitchChannelPointsMiner/internal/domain"
+	"TwitchChannelPointsMiner/internal/jsonvalue"
+	"TwitchChannelPointsMiner/internal/random"
+	"TwitchChannelPointsMiner/internal/twitchapi"
 )
 
-func (t *Twitch) RecoverStreak(streamer *domain.Streamer) (bool, error) {
+func (t *Client) RecoverStreak(streamer *domain.Streamer) (bool, error) {
 	if streamer == nil || streamer.ChannelID == "" {
 		return false, fmt.Errorf("missing streamer channel id")
 	}
@@ -17,7 +20,7 @@ func (t *Twitch) RecoverStreak(streamer *domain.Streamer) (bool, error) {
 		// should ChannelID also be anonymized somehow?
 		name = t.anonymizer.StreamerName(streamer)
 	}
-	rewardlistop := ClonePersistedOperation(GQLOperations.RewardList)
+	rewardlistop := twitchapi.ClonePersistedOperation(twitchapi.GQLOperations.RewardList)
 	if rewardlistop.Variables == nil {
 		rewardlistop.Variables = map[string]interface{}{}
 	}
@@ -51,10 +54,10 @@ func (t *Twitch) RecoverStreak(streamer *domain.Streamer) (bool, error) {
 		// check clips, last day first then last week (in case clips just over 24 hours old are from missed stream)
 		// then check vods
 		mode := "clips"
-		op := ClonePersistedOperation(GQLOperations.ClipsCardsUser)
+		op := twitchapi.ClonePersistedOperation(twitchapi.GQLOperations.ClipsCardsUser)
 		if filter == "videos" {
 			mode = "videos"
-			op = ClonePersistedOperation(GQLOperations.FilterableVideoTowerVideos)
+			op = twitchapi.ClonePersistedOperation(twitchapi.GQLOperations.FilterableVideoTowerVideos)
 			if op.Variables == nil {
 				op.Variables = map[string]interface{}{}
 			}
@@ -75,7 +78,7 @@ func (t *Twitch) RecoverStreak(streamer *domain.Streamer) (bool, error) {
 			if err != nil {
 				return false, err
 			}
-			respdata := navigate(resp, "data.user."+mode)
+			respdata := jsonvalue.At(resp, "data.user."+mode)
 			if respdata == nil {
 				return false, fmt.Errorf("missing %s data for channel %s", mode, streamer.ChannelID)
 			}
@@ -103,7 +106,7 @@ func (t *Twitch) RecoverStreak(streamer *domain.Streamer) (bool, error) {
 						clipid, _ := node["id"].(string)
 						slug, _ := node["slug"].(string)
 						createdAt, _ := node["createdAt"].(string)
-						playsessionid := randomString(32)
+						playsessionid := random.String(32)
 						eventProps := map[string]interface{}{
 							"location":        "vod",
 							"url":             url,

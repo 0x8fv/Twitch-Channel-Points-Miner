@@ -6,6 +6,7 @@ import (
 
 	"TwitchChannelPointsMiner/internal/domain"
 	"TwitchChannelPointsMiner/internal/events"
+	"TwitchChannelPointsMiner/internal/streak"
 )
 
 func (m *Miner) handlePointsUpdate(streamer *domain.Streamer, previous int, reason string) {
@@ -140,13 +141,13 @@ func (m *Miner) updateHistory(streamer *domain.Streamer, reason string, amount i
 	if reason == "WATCH" {
 		streamer.Stream.WatchCount++
 		if streamer.Stream.WatchStreakMissing && streamer.Stream.WatchCount >= 2 {
-			markActualStreakCompleted(streamer)
+			streak.MarkCompleted(streamer)
 		}
 		m.syncActiveStreakWatch(streamer, time.Now())
 		return
 	}
 	if reason == "WATCH_STREAK" {
-		markActualStreakCompleted(streamer)
+		streak.MarkCompleted(streamer)
 	}
 	m.syncActiveStreakWatch(streamer, time.Now())
 }

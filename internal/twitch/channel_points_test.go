@@ -6,15 +6,17 @@ import (
 	"testing"
 	"time"
 
+	"TwitchChannelPointsMiner/internal/auth"
 	"TwitchChannelPointsMiner/internal/domain"
+	"TwitchChannelPointsMiner/internal/twitchapi"
 )
 
 func TestLoadChannelPointsContextWrapsMissingChannel(t *testing.T) {
-	twitch := &Twitch{
-		clientVersion:  ClientVersion,
+	twitch := &Client{
+		clientVersion:  twitchapi.ClientVersion,
 		versionTTL:     time.Hour,
 		versionFetched: time.Now(),
-		twitchLogin:    &TwitchLogin{Token: "token"},
+		twitchLogin:    &auth.Login{Token: "token"},
 		client: &http.Client{
 			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 				return jsonResponse(http.StatusOK, `{"data":{"community":{"channel":null}}}`), nil

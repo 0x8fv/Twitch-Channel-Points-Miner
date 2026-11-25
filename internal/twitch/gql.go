@@ -8,17 +8,19 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+
+	"TwitchChannelPointsMiner/internal/twitchapi"
 )
 
-func (t *Twitch) PostGQL(payload interface{}) (map[string]interface{}, error) {
+func (t *Client) PostGQL(payload interface{}) (map[string]interface{}, error) {
 	return t.postGQLWithHeaders(payload, nil)
 }
 
-func (t *Twitch) PostGQLDecode(payload interface{}, out interface{}) error {
+func (t *Client) PostGQLDecode(payload interface{}, out interface{}) error {
 	return t.postGQLDecodeWithHeaders(payload, nil, out)
 }
 
-func (t *Twitch) postGQLWithHeaders(payload interface{}, extraHeaders map[string]string) (map[string]interface{}, error) {
+func (t *Client) postGQLWithHeaders(payload interface{}, extraHeaders map[string]string) (map[string]interface{}, error) {
 	if payload == nil {
 		return map[string]interface{}{}, nil
 	}
@@ -29,14 +31,14 @@ func (t *Twitch) postGQLWithHeaders(payload interface{}, extraHeaders map[string
 	return result, nil
 }
 
-func (t *Twitch) postGQLDecodeWithHeaders(payload interface{}, extraHeaders map[string]string, out interface{}) error {
+func (t *Client) postGQLDecodeWithHeaders(payload interface{}, extraHeaders map[string]string, out interface{}) error {
 	if payload == nil {
 		return nil
 	}
 	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequest(http.MethodPost, GQLOperations.URL, bytes.NewReader(body))
+	req, _ := http.NewRequest(http.MethodPost, twitchapi.GQLOperations.URL, bytes.NewReader(body))
 	req.Header.Set("Authorization", fmt.Sprintf("OAuth %s", t.twitchLogin.AuthToken()))
-	req.Header.Set("Client-Id", ClientID)
+	req.Header.Set("Client-Id", twitchapi.ClientID)
 	req.Header.Set("Client-Session-Id", t.clientSession)
 	req.Header.Set("Client-Version", t.UpdateClientVersion())
 	req.Header.Set("User-Agent", t.userAgent)
@@ -130,20 +132,20 @@ func operationNames(payload interface{}) []string {
 	}
 
 	switch p := payload.(type) {
-	case GQLPersistedOperation:
+	case twitchapi.GQLPersistedOperation:
 		add(p.OperationName)
 		return names
-	case *GQLPersistedOperation:
+	case *twitchapi.GQLPersistedOperation:
 		if p != nil {
 			add(p.OperationName)
 		}
 		return names
-	case []GQLPersistedOperation:
+	case []twitchapi.GQLPersistedOperation:
 		for i := range p {
 			add(p[i].OperationName)
 		}
 		return names
-	case []*GQLPersistedOperation:
+	case []*twitchapi.GQLPersistedOperation:
 		for _, op := range p {
 			if op != nil {
 				add(op.OperationName)

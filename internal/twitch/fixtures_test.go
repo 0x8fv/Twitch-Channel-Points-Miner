@@ -9,6 +9,7 @@ import (
 
 	"TwitchChannelPointsMiner/internal/domain"
 	"TwitchChannelPointsMiner/internal/events"
+	"TwitchChannelPointsMiner/internal/twitchapi"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -25,7 +26,7 @@ func jsonResponse(status int, body string) *http.Response {
 	}
 }
 
-func newTestTwitch(t *testing.T, responder func(operation string) (*http.Response, error)) *Twitch {
+func newTestTwitch(t *testing.T, responder func(operation string) (*http.Response, error)) *Client {
 	t.Helper()
 
 	client := &http.Client{
@@ -53,18 +54,15 @@ func newTestTwitch(t *testing.T, responder func(operation string) (*http.Respons
 		}),
 	}
 
-	return &Twitch{
+	return &Client{
 		userAgent:      "ua",
 		deviceID:       "device",
 		clientSession:  "session",
-		clientVersion:  ClientVersion,
+		clientVersion:  twitchapi.ClientVersion,
 		versionTTL:     time.Hour,
 		versionFetched: time.Now(),
-		twitchLogin: &TwitchLogin{
-			Token:  "token",
-			userID: "user-id",
-		},
-		client: client,
+		twitchLogin:    fakeSession{token: "token", userID: "user-id"},
+		client:         client,
 	}
 }
 
@@ -79,41 +77,51 @@ func newTestStreamer(watchStreak bool) *domain.Streamer {
 	}
 }
 
-type stubPubSubLogger struct {
+type stubLogger struct {
 	printfCalls int
 	errorCalls  int
 	emojiCalls  int
 	debugCalls  int
 }
 
-func (s *stubPubSubLogger) Printf(string, ...interface{}) {
+func (s *stubLogger) Printf(string, ...interface{}) {
 	s.printfCalls++
 }
 
-func (s *stubPubSubLogger) Errorf(string, ...interface{}) {
+func (s *stubLogger) Errorf(string, ...interface{}) {
 	s.errorCalls++
 }
 
-func (s *stubPubSubLogger) EmojiPrintf(string, string, ...interface{}) {
+func (s *stubLogger) EmojiPrintf(string, string, ...interface{}) {
 	s.emojiCalls++
 }
 
-func (s *stubPubSubLogger) Eventf(events.Event, string, ...interface{}) {
+func (s *stubLogger) Eventf(events.Event, string, ...interface{}) {
 	s.printfCalls++
 }
 
-func (s *stubPubSubLogger) EmojiEventf(string, events.Event, string, ...interface{}) {
+func (s *stubLogger) EmojiEventf(string, events.Event, string, ...interface{}) {
 	s.emojiCalls++
 }
 
-func (s *stubPubSubLogger) ErrorEventf(events.Event, string, ...interface{}) {
+func (s *stubLogger) ErrorEventf(events.Event, string, ...interface{}) {
 	s.errorCalls++
 }
 
-func (s *stubPubSubLogger) Debugf(string, ...interface{}) {
+func (s *stubLogger) Debugf(string, ...interface{}) {
 	s.debugCalls++
 }
 
-func (s *stubPubSubLogger) DebugEnabled() bool {
+func (s *stubLogger) DebugEnabled() bool {
 	return false
 }
+
+// fakeSession stands in for a logged-in account.
+type fakeSession struct {
+	token  string
+	userID string
+}
+
+func (s fakeSession) Login(string) error { return nil }
+func (s fakeSession) AuthToken() string  { return s.token }
+func (s fakeSession) UserID() string     { return s.userID }

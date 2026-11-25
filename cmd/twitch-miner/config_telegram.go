@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 
+	"TwitchChannelPointsMiner/internal/events"
+	"TwitchChannelPointsMiner/internal/logging"
 	"TwitchChannelPointsMiner/internal/notify"
 )
 
@@ -56,4 +58,15 @@ func (c telegramConfig) settings() notify.TelegramSettings {
 		Events:              c.Events,
 		DisableNotification: c.DisableNotification,
 	}
+}
+
+// startTelegram sends logged events to Telegram when a chat and token are configured.
+func startTelegram(cfg telegramConfig) {
+	notifier := notify.NewTelegramNotifier(cfg.settings())
+	if notifier == nil {
+		return
+	}
+	logging.Subscribe("telegram", func(event events.Event, sentence string) {
+		notifier.Send(sentence, event)
+	})
 }

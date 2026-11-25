@@ -2,15 +2,15 @@ package miner
 
 import (
 	"io"
-	"log"
 	"testing"
 
 	"TwitchChannelPointsMiner/internal/domain"
+	"TwitchChannelPointsMiner/internal/logging"
 )
 
 func TestHandlePubSubGainSupportsPredictionStakeDeduction(t *testing.T) {
 	m := &Miner{
-		logger: &Logger{base: log.New(io.Discard, "", 0)},
+		logger: logging.NewLoggerTo(io.Discard, logging.LoggerSettings{}),
 	}
 	streamer := &domain.Streamer{
 		Username:      "tester",

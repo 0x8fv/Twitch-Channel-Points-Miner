@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"TwitchChannelPointsMiner/internal/dashboard"
+	"TwitchChannelPointsMiner/internal/logging"
 	"TwitchChannelPointsMiner/internal/miner"
 )
 
@@ -52,7 +53,7 @@ func autoUpdateDisabledByEnv() bool {
 
 // startAnalytics wires the analytics store into the miner and serves the
 // dashboard in the background. Data lives in ./analytics of the data directory.
-func startAnalytics(cfg analyticsConfig, logger *miner.Logger) {
+func startAnalytics(cfg analyticsConfig, logger *logging.Logger) {
 	if !cfg.Enabled {
 		return
 	}

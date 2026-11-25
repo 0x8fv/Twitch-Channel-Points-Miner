@@ -9,11 +9,15 @@ import (
 	"strings"
 
 	"TwitchChannelPointsMiner/internal/domain"
+	"TwitchChannelPointsMiner/internal/jsonvalue"
+	"TwitchChannelPointsMiner/internal/prediction"
+	"TwitchChannelPointsMiner/internal/random"
+	"TwitchChannelPointsMiner/internal/twitchapi"
 )
 
 // ? LoadChannelPointsContext fetches points and claims any bonuses.
-func (t *Twitch) LoadChannelPointsContext(streamer *domain.Streamer) (int, error) {
-	op := ClonePersistedOperation(GQLOperations.ChannelPointsContext)
+func (t *Client) LoadChannelPointsContext(streamer *domain.Streamer) (int, error) {
+	op := twitchapi.ClonePersistedOperation(twitchapi.GQLOperations.ChannelPointsContext)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -87,7 +91,7 @@ func (t *Twitch) LoadChannelPointsContext(streamer *domain.Streamer) (int, error
 }
 
 // ? ClaimBonus redeems the community points bonus.
-func (t *Twitch) ClaimBonus(streamer *domain.Streamer, claimID string) error {
+func (t *Client) ClaimBonus(streamer *domain.Streamer, claimID string) error {
 	if claimID == "" {
 		return fmt.Errorf("missing claim id")
 	}
@@ -97,7 +101,7 @@ func (t *Twitch) ClaimBonus(streamer *domain.Streamer, claimID string) error {
 	return t.claimBonusTV(streamer, claimID)
 }
 
-func (t *Twitch) claimBonusTV(streamer *domain.Streamer, claimID string) error {
+func (t *Client) claimBonusTV(streamer *domain.Streamer, claimID string) error {
 	if streamer == nil || streamer.ChannelID == "" {
 		return fmt.Errorf("missing streamer/channel")
 	}
@@ -105,7 +109,7 @@ func (t *Twitch) claimBonusTV(streamer *domain.Streamer, claimID string) error {
 		return fmt.Errorf("missing claim id")
 	}
 
-	op := ClonePersistedOperation(GQLOperations.ClaimCommunityPoints)
+	op := twitchapi.ClonePersistedOperation(twitchapi.GQLOperations.ClaimCommunityPoints)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -115,9 +119,9 @@ func (t *Twitch) claimBonusTV(streamer *domain.Streamer, claimID string) error {
 	}
 
 	reqBody, _ := json.Marshal(op)
-	req, _ := http.NewRequest(http.MethodPost, GQLOperations.URL, bytes.NewReader(reqBody))
+	req, _ := http.NewRequest(http.MethodPost, twitchapi.GQLOperations.URL, bytes.NewReader(reqBody))
 	req.Header.Set("Authorization", fmt.Sprintf("OAuth %s", t.twitchLogin.AuthToken()))
-	req.Header.Set("Client-Id", ClientID)
+	req.Header.Set("Client-Id", twitchapi.ClientID)
 	req.Header.Set("Client-Session-Id", t.clientSession)
 	req.Header.Set("Client-Version", t.UpdateClientVersion())
 	req.Header.Set("User-Agent", t.userAgent) // ? Android TV UA
@@ -165,7 +169,7 @@ func (t *Twitch) claimBonusTV(streamer *domain.Streamer, claimID string) error {
 		}
 		return fmt.Errorf("claim bonus gql errors: %v", gqlErrs)
 	}
-	if status := navigate(result, "data.claimCommunityPoints.status"); status != nil {
+	if status := jsonvalue.At(result, "data.claimCommunityPoints.status"); status != nil {
 		statusStr := strings.ToUpper(fmt.Sprint(status))
 		if statusStr != "" && statusStr != "SUCCESS" && statusStr != "ALREADY_CLAIMED" {
 			if t.anonymizer != nil && t.anonymizer.Enabled() {
@@ -174,7 +178,7 @@ func (t *Twitch) claimBonusTV(streamer *domain.Streamer, claimID string) error {
 			return fmt.Errorf("claim bonus status %s (resp=%v)", statusStr, result)
 		}
 	}
-	if msg := navigate(result, "data.claimCommunityPoints.error.message"); msg != nil {
+	if msg := jsonvalue.At(result, "data.claimCommunityPoints.error.message"); msg != nil {
 		if t.anonymizer != nil && t.anonymizer.Enabled() {
 			return fmt.Errorf("claim bonus error")
 		}
@@ -184,11 +188,11 @@ func (t *Twitch) claimBonusTV(streamer *domain.Streamer, claimID string) error {
 }
 
 // ? ClaimMoment redeems a community moment callout.
-func (t *Twitch) ClaimMoment(streamer *domain.Streamer, momentID string) error {
+func (t *Client) ClaimMoment(streamer *domain.Streamer, momentID string) error {
 	if momentID == "" {
 		return nil
 	}
-	op := ClonePersistedOperation(GQLOperations.CommunityMomentCalloutClaim)
+	op := twitchapi.ClonePersistedOperation(twitchapi.GQLOperations.CommunityMomentCalloutClaim)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -198,11 +202,11 @@ func (t *Twitch) ClaimMoment(streamer *domain.Streamer, momentID string) error {
 }
 
 // ? JoinRaid follows a raid target to mimic viewer behavior.
-func (t *Twitch) JoinRaid(streamer *domain.Streamer, raidID string) error {
+func (t *Client) JoinRaid(streamer *domain.Streamer, raidID string) error {
 	if raidID == "" {
 		return fmt.Errorf("missing raid id")
 	}
-	op := ClonePersistedOperation(GQLOperations.JoinRaid)
+	op := twitchapi.ClonePersistedOperation(twitchapi.GQLOperations.JoinRaid)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -212,14 +216,14 @@ func (t *Twitch) JoinRaid(streamer *domain.Streamer, raidID string) error {
 }
 
 // ? MakePrediction places a bet for the provided event.
-func (t *Twitch) MakePrediction(event *PredictionEvent) error {
+func (t *Client) MakePrediction(event *prediction.Event) error {
 	if event == nil || event.Streamer == nil {
 		return fmt.Errorf("nil prediction event")
 	}
 	if event.Decision.Amount < 10 || event.Decision.OutcomeID == "" || event.EventID == "" {
 		return fmt.Errorf("invalid prediction decision")
 	}
-	op := ClonePersistedOperation(GQLOperations.MakePrediction)
+	op := twitchapi.ClonePersistedOperation(twitchapi.GQLOperations.MakePrediction)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -227,7 +231,7 @@ func (t *Twitch) MakePrediction(event *PredictionEvent) error {
 		"eventID":       event.EventID,
 		"outcomeID":     event.Decision.OutcomeID,
 		"points":        event.Decision.Amount,
-		"transactionID": randomHex(16),
+		"transactionID": random.Hex(16),
 	}
 	_, err := t.PostGQL(op)
 	return err

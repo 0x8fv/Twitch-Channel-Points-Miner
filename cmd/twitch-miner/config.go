@@ -10,7 +10,7 @@ import (
 
 	"TwitchChannelPointsMiner/internal/ansi"
 	"TwitchChannelPointsMiner/internal/jsonfile"
-	"TwitchChannelPointsMiner/internal/miner"
+	"TwitchChannelPointsMiner/internal/logging"
 )
 
 type privacyConfig struct {
@@ -221,7 +221,7 @@ func loadOrCreateConfig(path string) (config, error) {
 	return cfg, nil
 }
 
-func applyTimezoneOverride(raw *string, logger *miner.Logger) {
+func applyTimezoneOverride(raw *string, logger *logging.Logger) {
 	if raw == nil {
 		return
 	}

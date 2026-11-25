@@ -6,6 +6,7 @@ import (
 
 	"TwitchChannelPointsMiner/internal/domain"
 	"TwitchChannelPointsMiner/internal/events"
+	"TwitchChannelPointsMiner/internal/streak"
 )
 
 func (m *Miner) updatePresence(streamer *domain.Streamer) {
@@ -62,14 +63,14 @@ func (m *Miner) setPresence(streamer *domain.Streamer, online bool, reason strin
 	}
 	if prevKnown && prevOnline != online {
 		if online {
-			restoreResolvedStreakCarryover(streamer, now)
+			streak.RestoreCarryover(streamer, now)
 		} else {
-			rememberResolvedStreakCarryover(streamer, now)
+			streak.RememberCarryover(streamer, now)
 		}
 	}
 	streamer.IsOnline = online
 	m.syncActiveStreakWatch(streamer, now)
-	m.updateChatPresence(streamer, online)
+	m.chat.Update(streamer, online)
 	if online && m.showGameInfo {
 		m.resolveGameName(streamer)
 	}

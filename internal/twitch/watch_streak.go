@@ -3,6 +3,8 @@ package twitch
 import (
 	"strconv"
 	"time"
+
+	"TwitchChannelPointsMiner/internal/twitchapi"
 )
 
 func currentStreamHasCompletedWatchStreak(createdAt, achievementAt time.Time) bool {
@@ -49,11 +51,11 @@ func extractWatchStreakLength(resp *gqlRewardListResponse) int {
 	return out
 }
 
-func (t *Twitch) rewardListAchievementAt(channelID string) time.Time {
+func (t *Client) rewardListAchievementAt(channelID string) time.Time {
 	if channelID == "" {
 		return time.Time{}
 	}
-	op := ClonePersistedOperation(GQLOperations.RewardList)
+	op := twitchapi.ClonePersistedOperation(twitchapi.GQLOperations.RewardList)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}

@@ -10,8 +10,11 @@ import (
 	"time"
 
 	"TwitchChannelPointsMiner/internal/domain"
+	"TwitchChannelPointsMiner/internal/drops"
 	"TwitchChannelPointsMiner/internal/events"
+	"TwitchChannelPointsMiner/internal/pubsub"
 	"TwitchChannelPointsMiner/internal/twitch"
+	"TwitchChannelPointsMiner/internal/twitchapi"
 	"TwitchChannelPointsMiner/internal/update"
 )
 
@@ -24,7 +27,7 @@ func (m *Miner) run(streamers []string, useFollowers bool, order domain.Follower
 	m.stop = make(chan struct{})
 	m.initialPoints = make(map[string]int)
 
-	tw, err := twitch.NewTwitch(m.Username, twitch.GetUserAgent("CHROME"), m.Password, m.logger, m.anonymizer)
+	tw, err := twitch.NewClient(m.Username, twitchapi.GetUserAgent("CHROME"), m.Password, m.logger, m.anonymizer)
 	if err != nil {
 		m.logger.Fatalf("failed to create twitch client: %v", err)
 	}
@@ -69,7 +72,7 @@ func (m *Miner) run(streamers []string, useFollowers bool, order domain.Follower
 			Username:    name,
 			Settings:    settings,
 			Stream:      domain.NewStream(),
-			StreamerURL: fmt.Sprintf("%s/%s", twitch.URL, name),
+			StreamerURL: fmt.Sprintf("%s/%s", twitchapi.URL, name),
 		}
 		id, err := m.twitch.GetChannelID(name)
 		if err != nil {
@@ -77,7 +80,7 @@ func (m *Miner) run(streamers []string, useFollowers bool, order domain.Follower
 			// in case streamer has changed names recently
 			id = ""
 			if m.warmStartCache != nil {
-				entry, ok := m.warmStartCache.get(name)
+				entry, ok := m.warmStartCache.Get(name)
 				if ok {
 					id = strings.TrimSpace(entry.ChannelID)
 				}
@@ -105,15 +108,16 @@ func (m *Miner) run(streamers []string, useFollowers bool, order domain.Follower
 	}
 
 	claimDropsEnabled := m.shouldClaimDrops(streamerObjs)
+	dropClaimer := drops.NewClaimer(m.twitch, m.logger, m.showDropsProgress)
 	if m.ClaimDropsStartup && claimDropsEnabled {
-		m.claimDropsFromInventory("startup drop claim failed")
+		dropClaimer.Claim("startup drop claim failed")
 	}
 
 	m.streamers = streamerObjs
 
 	// ? background loops
 	if claimDropsEnabled {
-		go m.dropClaimer(m.stop)
+		go dropClaimer.Run(m.stop)
 	}
 	go m.contextRefresher(streamerObjs, m.stop)
 	go m.minuteWatcher(streamerObjs, m.stop)
@@ -177,7 +181,7 @@ func (m *Miner) sleepWithStop(duration time.Duration, stop <-chan struct{}) bool
 }
 
 func (m *Miner) startPubSub(streamers []*domain.Streamer, stop <-chan struct{}) {
-	client := twitch.NewPubSubClient(
+	client := pubsub.NewClient(
 		m.twitch,
 		m.logger,
 		m.anonymizer,
@@ -247,7 +251,7 @@ func (m *Miner) shutdown(sessionID string) {
 			}
 		}
 	}
-	m.stopAllChatWatchers()
+	m.chat.LeaveAll()
 	os.Exit(0)
 }
 

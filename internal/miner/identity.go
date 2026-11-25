@@ -7,6 +7,7 @@ import (
 
 	"TwitchChannelPointsMiner/internal/domain"
 	"TwitchChannelPointsMiner/internal/twitch"
+	"TwitchChannelPointsMiner/internal/twitchapi"
 )
 
 func streamerInitialPointsKey(streamer *domain.Streamer) string {
@@ -30,11 +31,11 @@ func (m *Miner) applyStreamerLoginChange(streamer *domain.Streamer, login string
 
 	oldLogin := strings.ToLower(strings.TrimSpace(streamer.Username))
 	if m != nil {
-		m.stopChatWatcher(streamer)
+		m.chat.Leave(streamer)
 	}
 
 	streamer.Username = login
-	streamer.StreamerURL = fmt.Sprintf("%s/%s", twitch.URL, login)
+	streamer.StreamerURL = fmt.Sprintf("%s/%s", twitchapi.URL, login)
 	if streamer.Stream != nil {
 		streamer.Stream.SpadeURL = ""
 	}
@@ -55,7 +56,7 @@ func (m *Miner) applyStreamerLoginChange(streamer *domain.Streamer, login string
 		}
 	}
 	if m != nil {
-		m.updateChatPresence(streamer, streamer.IsOnline)
+		m.chat.Update(streamer, streamer.IsOnline)
 		m.syncWarmStartCacheFromStreamer(streamer)
 	}
 	return true

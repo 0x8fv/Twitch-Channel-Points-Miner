@@ -4,12 +4,15 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+
+	"TwitchChannelPointsMiner/internal/auth"
+	"TwitchChannelPointsMiner/internal/twitchapi"
 )
 
 func TestGetUserByIDReturnsCurrentLogin(t *testing.T) {
-	twitch := &Twitch{
+	twitch := &Client{
 		userAgent: "ua",
-		twitchLogin: &TwitchLogin{
+		twitchLogin: &auth.Login{
 			Token: "token",
 		},
 		client: &http.Client{
@@ -23,7 +26,7 @@ func TestGetUserByIDReturnsCurrentLogin(t *testing.T) {
 				if got := req.Header.Get("Authorization"); got != "Bearer token" {
 					t.Fatalf("Authorization got %q", got)
 				}
-				if got := req.Header.Get("Client-Id"); got != ClientID {
+				if got := req.Header.Get("Client-Id"); got != twitchapi.ClientID {
 					t.Fatalf("Client-Id got %q", got)
 				}
 				return jsonResponse(http.StatusOK, `{"data":[{"id":"123456","login":"newlogin","display_name":"NewLogin"}]}`), nil
@@ -41,9 +44,9 @@ func TestGetUserByIDReturnsCurrentLogin(t *testing.T) {
 }
 
 func TestGetUserByIDReturnsNotFoundForEmptyData(t *testing.T) {
-	twitch := &Twitch{
+	twitch := &Client{
 		userAgent: "ua",
-		twitchLogin: &TwitchLogin{
+		twitchLogin: &auth.Login{
 			Token: "token",
 		},
 		client: &http.Client{

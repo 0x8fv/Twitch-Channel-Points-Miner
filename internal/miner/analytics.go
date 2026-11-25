@@ -6,6 +6,7 @@ import (
 
 	"TwitchChannelPointsMiner/internal/domain"
 	"TwitchChannelPointsMiner/internal/events"
+	"TwitchChannelPointsMiner/internal/logging"
 )
 
 // AnalyticsSink receives point changes and log events for the analytics dashboard.
@@ -22,13 +23,18 @@ type analyticsSinkHolder struct{ sink AnalyticsSink }
 
 var analyticsSink atomic.Pointer[analyticsSinkHolder]
 
-// SetAnalyticsSink installs the process-wide analytics sink (nil disables it).
+// SetAnalyticsSink installs the process-wide analytics sink (nil disables it)
+// and subscribes it to logged events.
 func SetAnalyticsSink(sink AnalyticsSink) {
 	if sink == nil {
 		analyticsSink.Store(nil)
+		logging.Subscribe("analytics", nil)
 		return
 	}
 	analyticsSink.Store(&analyticsSinkHolder{sink: sink})
+	logging.Subscribe("analytics", func(event events.Event, sentence string) {
+		sink.RecordEvent(string(event), sentence)
+	})
 }
 
 func currentAnalyticsSink() AnalyticsSink {
@@ -36,13 +42,6 @@ func currentAnalyticsSink() AnalyticsSink {
 		return h.sink
 	}
 	return nil
-}
-
-// analyticsEmitEvent forwards a logged event (ANSI colors stripped) to the sink.
-func analyticsEmitEvent(event events.Event, message string) {
-	if sink := currentAnalyticsSink(); sink != nil {
-		sink.RecordEvent(string(event), ansiRegexp.ReplaceAllString(message, ""))
-	}
 }
 
 func (m *Miner) analyticsRecordPoint(streamer *domain.Streamer, delta int, reason string) {

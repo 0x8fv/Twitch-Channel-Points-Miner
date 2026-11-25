@@ -4,10 +4,13 @@ import (
 	"fmt"
 
 	"TwitchChannelPointsMiner/internal/domain"
+	"TwitchChannelPointsMiner/internal/jsonvalue"
+	"TwitchChannelPointsMiner/internal/random"
+	"TwitchChannelPointsMiner/internal/twitchapi"
 )
 
 // ? ContributeToCommunityGoals mirrors the site behavior by spending points into active community goals.
-func (t *Twitch) ContributeToCommunityGoals(streamer *domain.Streamer) {
+func (t *Client) ContributeToCommunityGoals(streamer *domain.Streamer) {
 	if streamer == nil || !streamer.Settings.CommunityGoals || len(streamer.CommunityGoals) == 0 {
 		return
 	}
@@ -22,7 +25,7 @@ func (t *Twitch) ContributeToCommunityGoals(streamer *domain.Streamer) {
 		return
 	}
 
-	op := ClonePersistedOperation(GQLOperations.UserPointsContribution)
+	op := twitchapi.ClonePersistedOperation(twitchapi.GQLOperations.UserPointsContribution)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -31,7 +34,7 @@ func (t *Twitch) ContributeToCommunityGoals(streamer *domain.Streamer) {
 	if err != nil {
 		return
 	}
-	contribs := navigate(resp, "data.user.channel.self.communityPoints.goalContributions")
+	contribs := jsonvalue.At(resp, "data.user.channel.self.communityPoints.goalContributions")
 	arr, ok := contribs.([]interface{})
 	if !ok {
 		return
@@ -50,7 +53,7 @@ func (t *Twitch) ContributeToCommunityGoals(streamer *domain.Streamer) {
 		if goal == nil {
 			continue
 		}
-		userPoints := int(fromFloat(goalContribution["userPointsContributedThisStream"]))
+		userPoints := int(jsonvalue.Float(goalContribution["userPointsContributedThisStream"]))
 		userLeft := goal.PerStreamUserMaximumContribution - userPoints
 		amount := minInt(goal.AmountLeft(), userLeft, streamer.ChannelPoints)
 		if amount > 0 {
@@ -60,11 +63,11 @@ func (t *Twitch) ContributeToCommunityGoals(streamer *domain.Streamer) {
 }
 
 // ? ContributeToCommunityGoal sends a single contribution transaction.
-func (t *Twitch) ContributeToCommunityGoal(streamer *domain.Streamer, goalID, title string, amount int) error {
+func (t *Client) ContributeToCommunityGoal(streamer *domain.Streamer, goalID, title string, amount int) error {
 	if amount <= 0 || goalID == "" {
 		return nil
 	}
-	op := ClonePersistedOperation(GQLOperations.ContributeCommunityPointsCommunityGoal)
+	op := twitchapi.ClonePersistedOperation(twitchapi.GQLOperations.ContributeCommunityPointsCommunityGoal)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -72,13 +75,13 @@ func (t *Twitch) ContributeToCommunityGoal(streamer *domain.Streamer, goalID, ti
 		"amount":        amount,
 		"channelID":     streamer.ChannelID,
 		"goalID":        goalID,
-		"transactionID": randomHex(16),
+		"transactionID": random.Hex(16),
 	}
 	resp, err := t.PostGQL(op)
 	if err != nil {
 		return err
 	}
-	if errVal := navigate(resp, "data.contributeCommunityPointsCommunityGoal.error"); errVal != nil {
+	if errVal := jsonvalue.At(resp, "data.contributeCommunityPointsCommunityGoal.error"); errVal != nil {
 		if errStr, ok := errVal.(string); ok && errStr != "" {
 			return fmt.Errorf("unable to contribute to %s: %s", title, errStr)
 		}
@@ -104,4 +107,17 @@ func parseCommunityGoals(goals interface{}) map[string]*domain.CommunityGoal {
 		}
 	}
 	return result
+}
+
+func minInt(values ...int) int {
+	if len(values) == 0 {
+		return 0
+	}
+	min := values[0]
+	for _, v := range values[1:] {
+		if v < min {
+			min = v
+		}
+	}
+	return min
 }

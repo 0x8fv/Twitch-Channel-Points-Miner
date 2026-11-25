@@ -1,0 +1,191 @@
+package logging
+
+import (
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+
+	"TwitchChannelPointsMiner/internal/events"
+	"TwitchChannelPointsMiner/internal/notify"
+)
+
+type LoggerSettings struct {
+	Save             bool                   `json:"save"`
+	ConsoleLevel     int                    `json:"console_level"`
+	FileLevel        int                    `json:"file_level"`
+	Emoji            bool                   `json:"emoji"`
+	Smart            bool                   `json:"smart"`
+	ShowSeconds      bool                   `json:"show_seconds"`
+	ConsoleUsername  bool                   `json:"console_username"`
+	ShowClaimedBonus bool                   `json:"show_claimed_bonus_msg"`
+	Less             bool                   `json:"less"`
+	Debug            bool                   `json:"debug"`
+	DebugDeep        bool                   `json:"debug_deep"`
+	AnonymizeLogs    bool                   `json:"anonymize_logs"`
+	Discord          notify.DiscordSettings `json:"discord"`
+}
+
+type Logger struct {
+	base     *log.Logger
+	settings LoggerSettings
+	discord  *notify.DiscordWebhook
+}
+
+type dualWriter struct {
+	console io.Writer
+	file    io.Writer
+}
+
+func (w dualWriter) Write(p []byte) (int, error) {
+	if w.console != nil {
+		if _, err := w.console.Write(p); err != nil {
+			return 0, err
+		}
+	}
+	if w.file != nil {
+		clean := ansiRegexp.ReplaceAll(p, nil)
+		if _, err := w.file.Write(clean); err != nil {
+			return 0, err
+		}
+	}
+	return len(p), nil
+}
+
+var ansiRegexp = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func NewLogger(settings LoggerSettings, username string) *Logger {
+	var output io.Writer = os.Stdout
+	if settings.Save {
+		logDir := "log"
+		if err := os.MkdirAll(logDir, 0o755); err == nil {
+			name := strings.TrimSpace(username)
+			if settings.AnonymizeLogs || name == "" {
+				name = "miner"
+			}
+			name = SanitizeFilename(name)
+			logPath := filepath.Join(logDir, fmt.Sprintf("%s.log", name))
+			f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+			if err == nil {
+				output = dualWriter{
+					console: os.Stdout,
+					file:    f,
+				}
+			}
+		}
+	}
+	return &Logger{
+		base:     log.New(output, "", 0),
+		settings: settings,
+		discord:  notify.NewDiscordWebhook(settings.Discord),
+	}
+}
+
+// NewLoggerTo returns a logger that writes to output only, without a log file.
+func NewLoggerTo(output io.Writer, settings LoggerSettings) *Logger {
+	return &Logger{
+		base:     log.New(output, "", 0),
+		settings: settings,
+		discord:  notify.NewDiscordWebhook(settings.Discord),
+	}
+}
+
+func SanitizeFilename(name string) string {
+	replacer := strings.NewReplacer(
+		"/", "_",
+		"\\", "_",
+		":", "_",
+		"*", "_",
+		"?", "_",
+		"\"", "_",
+		"<", "_",
+		">", "_",
+		"|", "_",
+	)
+	return replacer.Replace(name)
+}
+
+func (l *Logger) log(level, emoji, format string, args ...interface{}) {
+	l.logEvent(level, emoji, "", format, args...)
+}
+
+func (l *Logger) logEvent(level, emoji string, event events.Event, format string, args ...interface{}) {
+	if level == "DEBUG" && !l.settings.Debug {
+		return
+	}
+	if level == "DEEP" && (!l.settings.Debug || !l.settings.DebugDeep) {
+		return
+	}
+	message := fmt.Sprintf(format, args...)
+	if event != "" {
+		// Console keeps the full line, including its polarity glyph. Discord and
+		// every subscriber get a sentence built from the raw line.
+		presented := notify.Sentence(message)
+		if l.discord != nil {
+			l.discord.Send(presented, event)
+		}
+		publish(event, presented)
+	}
+	if glyph := emojiFor(emoji, event); glyph != "" && l.settings.Emoji {
+		message = fmt.Sprintf("%s %s", glyph, message)
+	}
+	timestampFormat := "15:04 02/01/06"
+	if l.settings.ShowSeconds {
+		timestampFormat = "15:04:05 02/01/06"
+	}
+	timestamp := time.Now().Format(timestampFormat)
+	l.base.Printf("[%s] %s: %s", level, timestamp, message)
+}
+
+func (l *Logger) Printf(format string, args ...interface{}) {
+	l.log("INFO", "", format, args...)
+}
+
+func (l *Logger) Println(v ...interface{}) {
+	l.log("INFO", "", "%s", fmt.Sprint(v...))
+}
+
+func (l *Logger) Errorf(format string, args ...interface{}) {
+	l.log("ERROR", "", format, args...)
+}
+
+func (l *Logger) Fatalf(format string, args ...interface{}) {
+	l.log("ERROR", "", format, args...)
+	os.Exit(1)
+}
+
+func (l *Logger) EmojiPrintf(emoji, format string, args ...interface{}) {
+	l.log("INFO", emoji, format, args...)
+}
+
+func (l *Logger) Eventf(event events.Event, format string, args ...interface{}) {
+	l.logEvent("INFO", "", event, format, args...)
+}
+
+func (l *Logger) EmojiEventf(emoji string, event events.Event, format string, args ...interface{}) {
+	l.logEvent("INFO", emoji, event, format, args...)
+}
+
+func (l *Logger) ErrorEventf(event events.Event, format string, args ...interface{}) {
+	l.logEvent("ERROR", "", event, format, args...)
+}
+
+func (l *Logger) Debugf(format string, args ...interface{}) {
+	l.log("DEBUG", "", format, args...)
+}
+
+func (l *Logger) DebugEnabled() bool {
+	return l.settings.Debug
+}
+
+func (l *Logger) DeepDebugf(format string, args ...interface{}) {
+	l.log("DEEP", "", format, args...)
+}
+
+func (l *Logger) DeepDebugEnabled() bool {
+	return l.settings.Debug && l.settings.DebugDeep
+}

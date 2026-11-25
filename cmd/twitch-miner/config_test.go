@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"TwitchChannelPointsMiner/internal/domain"
-	"TwitchChannelPointsMiner/internal/miner"
+	"TwitchChannelPointsMiner/internal/logging"
 )
 
 func TestDefaultConfigIncludesExpectedKeys(t *testing.T) {
@@ -55,7 +55,7 @@ func TestApplyTimezoneOverride(t *testing.T) {
 	defer func() { time.Local = original }()
 
 	zone := "UTC"
-	logger := miner.NewLogger(miner.LoggerSettings{}, "")
+	logger := logging.NewLogger(logging.LoggerSettings{}, "")
 	applyTimezoneOverride(&zone, logger)
 	if time.Local.String() != "UTC" {
 		t.Fatalf("expected time.Local set to UTC, got %s", time.Local.String())

@@ -11,8 +11,11 @@ import (
 	"sync"
 	"time"
 
+	"TwitchChannelPointsMiner/internal/auth"
 	"TwitchChannelPointsMiner/internal/domain"
 	"TwitchChannelPointsMiner/internal/privacy"
+	"TwitchChannelPointsMiner/internal/random"
+	"TwitchChannelPointsMiner/internal/twitchapi"
 )
 
 var (
@@ -33,7 +36,15 @@ type deepDebugLogger interface {
 	DeepDebugEnabled() bool
 }
 
-type Twitch struct {
+// session is what the client needs from a logged-in account.
+type session interface {
+	Login(cookiesPath string) error
+	AuthToken() string
+	UserID() string
+}
+
+type Client struct {
+	username       string
 	userAgent      string
 	deviceID       string
 	clientSession  string
@@ -41,7 +52,7 @@ type Twitch struct {
 	versionMu      sync.Mutex
 	versionFetched time.Time
 	versionTTL     time.Duration
-	twitchLogin    *TwitchLogin
+	twitchLogin    session
 	client         *http.Client
 	twilightRegexp *regexp.Regexp
 	settingsRegex  *regexp.Regexp
@@ -51,18 +62,19 @@ type Twitch struct {
 	onGameChange   func(streamer *domain.Streamer, previous, current string)
 }
 
-func NewTwitch(username, userAgent, password string, logger debugLogger, anonymizer *privacy.Anonymizer) (*Twitch, error) {
-	deviceID := randomString(32)
-	login, err := NewTwitchLogin(ClientID, deviceID, username, userAgent, password)
+func NewClient(username, userAgent, password string, logger debugLogger, anonymizer *privacy.Anonymizer) (*Client, error) {
+	deviceID := random.String(32)
+	login, err := auth.NewLogin(twitchapi.ClientID, deviceID, username, userAgent, password)
 	if err != nil {
 		return nil, err
 	}
 
-	return &Twitch{
+	return &Client{
+		username:       username,
 		userAgent:      userAgent,
 		deviceID:       deviceID,
-		clientSession:  randomHex(8),
-		clientVersion:  ClientVersion,
+		clientSession:  random.Hex(8),
+		clientVersion:  twitchapi.ClientVersion,
 		versionTTL:     10 * time.Hour,
 		twitchLogin:    login,
 		client:         login.Client(),
@@ -75,11 +87,11 @@ func NewTwitch(username, userAgent, password string, logger debugLogger, anonymi
 }
 
 // ? SetGameChangeHandler registers a callback fired whenever stream game metadata changes.
-func (t *Twitch) SetGameChangeHandler(handler func(streamer *domain.Streamer, previous, current string)) {
+func (t *Client) SetGameChangeHandler(handler func(streamer *domain.Streamer, previous, current string)) {
 	t.onGameChange = handler
 }
 
-func (t *Twitch) Login(username string) error {
+func (t *Client) Login(username string) error {
 	cookiesPath := filepath.Join("cookies", fmt.Sprintf("%s.json", username))
 	if err := t.twitchLogin.Login(cookiesPath); err != nil {
 		return err
@@ -87,20 +99,20 @@ func (t *Twitch) Login(username string) error {
 	return nil
 }
 
-func (t *Twitch) ChatToken() string {
+func (t *Client) ChatToken() string {
 	if t == nil || t.twitchLogin == nil {
 		return ""
 	}
 	return t.twitchLogin.AuthToken()
 }
 
-func (t *Twitch) debugf(format string, args ...interface{}) {
+func (t *Client) debugf(format string, args ...interface{}) {
 	if t.logger != nil && t.logger.DebugEnabled() {
 		t.logger.Debugf(format, args...)
 	}
 }
 
-func (t *Twitch) deepDebugf(format string, args ...interface{}) {
+func (t *Client) deepDebugf(format string, args ...interface{}) {
 	if t == nil {
 		return
 	}
@@ -118,9 +130,9 @@ func (t *Twitch) deepDebugf(format string, args ...interface{}) {
 }
 
 // ? UpdateClientVersion refreshes the Twitch build id used for GQL calls.
-func (t *Twitch) UpdateClientVersion() string {
+func (t *Client) UpdateClientVersion() string {
 	if t == nil {
-		return ClientVersion
+		return twitchapi.ClientVersion
 	}
 
 	t.versionMu.Lock()
@@ -143,7 +155,7 @@ func (t *Twitch) UpdateClientVersion() string {
 		return version
 	}
 
-	resp, err := client.Get(URL)
+	resp, err := client.Get(twitchapi.URL)
 	if err != nil {
 		return version
 	}
@@ -175,4 +187,19 @@ func displayName(name string) string {
 		return ""
 	}
 	return strings.ToUpper(name[:1]) + name[1:]
+}
+
+// AuthToken is the OAuth token of the logged-in account.
+func (t *Client) AuthToken() string {
+	return t.twitchLogin.AuthToken()
+}
+
+// UserID is the Twitch user id of the logged-in account.
+func (t *Client) UserID() string {
+	return t.twitchLogin.UserID()
+}
+
+// LoginName is the login the session was opened with.
+func (t *Client) LoginName() string {
+	return t.username
 }

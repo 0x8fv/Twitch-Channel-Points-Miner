@@ -6,6 +6,7 @@ import (
 
 	"TwitchChannelPointsMiner/internal/domain"
 	"TwitchChannelPointsMiner/internal/events"
+	"TwitchChannelPointsMiner/internal/logging"
 )
 
 type fakeAnalyticsSink struct {
@@ -35,7 +36,7 @@ func TestAnalyticsSinkReceivesPointsAndEvents(t *testing.T) {
 	SetAnalyticsSink(sink)
 	defer SetAnalyticsSink(nil)
 
-	m := &Miner{logger: NewLogger(LoggerSettings{}, "")}
+	m := &Miner{logger: logging.NewLogger(logging.LoggerSettings{}, "")}
 	streamer := &domain.Streamer{Username: "alice", ChannelPoints: 1000}
 
 	m.handlePointsUpdate(streamer, 0, "") // first load: baseline only

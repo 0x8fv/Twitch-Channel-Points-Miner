@@ -4,6 +4,9 @@ import (
 	"time"
 
 	"TwitchChannelPointsMiner/internal/domain"
+	"TwitchChannelPointsMiner/internal/jsonvalue"
+	"TwitchChannelPointsMiner/internal/random"
+	"TwitchChannelPointsMiner/internal/twitchapi"
 )
 
 type ClaimedDrop struct {
@@ -26,8 +29,8 @@ type DropStatus struct {
 }
 
 // ? ClaimDrop claims a single drop instance.
-func (t *Twitch) ClaimDrop(dropInstanceID string) (bool, error) {
-	op := ClonePersistedOperation(GQLOperations.DropsPageClaimDropRewards)
+func (t *Client) ClaimDrop(dropInstanceID string) (bool, error) {
+	op := twitchapi.ClonePersistedOperation(twitchapi.GQLOperations.DropsPageClaimDropRewards)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -36,7 +39,7 @@ func (t *Twitch) ClaimDrop(dropInstanceID string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	status := navigate(resp, "data.claimDropRewards.status")
+	status := jsonvalue.At(resp, "data.claimDropRewards.status")
 	switch status {
 	case "DROP_INSTANCE_ALREADY_CLAIMED", "ELIGIBLE_FOR_ALL":
 		return true, nil
@@ -45,12 +48,12 @@ func (t *Twitch) ClaimDrop(dropInstanceID string) (bool, error) {
 	}
 }
 
-func (t *Twitch) ClaimAllDropsFromInventory() ([]ClaimedDrop, error) {
+func (t *Client) ClaimAllDropsFromInventory() ([]ClaimedDrop, error) {
 	claimedDrops, _, err := t.ClaimAllDropsFromInventoryWithStatuses()
 	return claimedDrops, err
 }
 
-func (t *Twitch) ClaimAllDropsFromInventoryWithStatuses() ([]ClaimedDrop, []DropStatus, error) {
+func (t *Client) ClaimAllDropsFromInventoryWithStatuses() ([]ClaimedDrop, []DropStatus, error) {
 	var claimedDrops []ClaimedDrop
 	inv := t.inventory()
 	if inv == nil {
@@ -76,15 +79,15 @@ func (t *Twitch) ClaimAllDropsFromInventoryWithStatuses() ([]ClaimedDrop, []Drop
 				CurrentValue:  status.CurrentValue,
 				RequiredValue: status.RequiredValue,
 			})
-			time.Sleep(time.Duration(randomInt(5, 10)) * time.Second)
+			time.Sleep(time.Duration(random.Int(5, 10)) * time.Second)
 		}
 	}
 	return claimedDrops, statuses, claimErr
 }
 
 // ? Fetch campaign IDs for a streamer if drops enabled.
-func (t *Twitch) CampaignIDsForStreamer(streamer *domain.Streamer) ([]string, error) {
-	op := ClonePersistedOperation(GQLOperations.DropsHighlightServiceAvailable)
+func (t *Client) CampaignIDsForStreamer(streamer *domain.Streamer) ([]string, error) {
+	op := twitchapi.ClonePersistedOperation(twitchapi.GQLOperations.DropsHighlightServiceAvailable)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -93,7 +96,7 @@ func (t *Twitch) CampaignIDsForStreamer(streamer *domain.Streamer) ([]string, er
 	if err != nil {
 		return nil, err
 	}
-	cams := navigate(resp, "data.channel.viewerDropCampaigns")
+	cams := jsonvalue.At(resp, "data.channel.viewerDropCampaigns")
 	if cams == nil {
 		return []string{}, nil
 	}
@@ -107,12 +110,12 @@ func (t *Twitch) CampaignIDsForStreamer(streamer *domain.Streamer) ([]string, er
 	return res, nil
 }
 
-func (t *Twitch) inventory() map[string]interface{} {
-	resp, err := t.PostGQL(GQLOperations.Inventory)
+func (t *Client) inventory() map[string]interface{} {
+	resp, err := t.PostGQL(twitchapi.GQLOperations.Inventory)
 	if err != nil || resp == nil {
 		return nil
 	}
-	inv := navigate(resp, "data.currentUser.inventory")
+	inv := jsonvalue.At(resp, "data.currentUser.inventory")
 	if inv == nil {
 		return nil
 	}

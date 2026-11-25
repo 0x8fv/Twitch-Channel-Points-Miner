@@ -37,7 +37,6 @@ func TestApplyStreamerLoginChangeMigratesMutableLoginState(t *testing.T) {
 			"123456":   100,
 			"oldlogin": 100,
 		},
-		chatWatchers: make(map[string]*twitch.ChatClient),
 	}
 
 	changed := m.applyStreamerLoginChange(streamer, "newlogin")

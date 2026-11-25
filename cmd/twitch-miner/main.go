@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"TwitchChannelPointsMiner/internal/domain"
+	"TwitchChannelPointsMiner/internal/logging"
 	"TwitchChannelPointsMiner/internal/miner"
 	"TwitchChannelPointsMiner/internal/notify"
 	"TwitchChannelPointsMiner/internal/update"
@@ -66,7 +67,7 @@ func main() {
 	baseStreamerSettings := buildBaseStreamerSettings(cfg)
 	overrideSettings := buildOverrideSettings(baseStreamerSettings, cfg.StreamerOverrides)
 
-	loggerSettings := miner.LoggerSettings{
+	loggerSettings := logging.LoggerSettings{
 		Save:             cfg.SaveLogs,
 		ConsoleLevel:     0,
 		FileLevel:        0,
@@ -85,7 +86,7 @@ func main() {
 		},
 	}
 
-	logger := miner.NewLogger(loggerSettings, cfg.Username)
+	logger := logging.NewLogger(loggerSettings, cfg.Username)
 	applyTimezoneOverride(cfg.Timezone, logger)
 
 	minr := miner.NewMiner(
@@ -107,7 +108,7 @@ func main() {
 		cfg.ShowDropsProgress,
 	)
 	startAnalytics(cfg.Analytics, logger)
-	miner.SetTelegram(cfg.Telegram.settings())
+	startTelegram(cfg.Telegram)
 
 	if len(cfg.Streamers) > 0 {
 		minr.Mine(cfg.Streamers)

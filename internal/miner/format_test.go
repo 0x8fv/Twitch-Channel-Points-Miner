@@ -19,23 +19,6 @@ func TestFormatHelpers(t *testing.T) {
 	if got := formatPointsWithSuffix(1250000, 1_000_000, "M"); got != "1.25M" {
 		t.Fatalf("suffix format got %s", got)
 	}
-
-	if got := formatDropProgress(3, 10); got != "3/10" {
-		t.Fatalf("drop progress got %s", got)
-	}
-	if got := formatDropProgress(5, 0); got != "5" {
-		t.Fatalf("drop progress with zero required got %s", got)
-	}
-
-	if got := progressPercent(5, 10); got != 50 {
-		t.Fatalf("percent got %d", got)
-	}
-	if got := progressPercent(1, 0); got != 100 {
-		t.Fatalf("zero required but progress present got %d", got)
-	}
-	if got := progressPercent(0, 0); got != 0 {
-		t.Fatalf("zero current and required got %d", got)
-	}
 }
 
 func TestFormatDuration(t *testing.T) {

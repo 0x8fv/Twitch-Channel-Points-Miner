@@ -9,9 +9,11 @@ import (
 	"strings"
 
 	"TwitchChannelPointsMiner/internal/domain"
+	"TwitchChannelPointsMiner/internal/jsonvalue"
+	"TwitchChannelPointsMiner/internal/twitchapi"
 )
 
-func (t *Twitch) GetUserByID(channelID string) (*TwitchUserIdentity, error) {
+func (t *Client) GetUserByID(channelID string) (*TwitchUserIdentity, error) {
 	channelID = strings.TrimSpace(channelID)
 	if channelID == "" {
 		return nil, fmt.Errorf("missing channel id: %w", ErrChannelNotFound)
@@ -23,7 +25,7 @@ func (t *Twitch) GetUserByID(channelID string) (*TwitchUserIdentity, error) {
 	endpoint := "https://api.twitch.tv/helix/users?id=" + url.QueryEscape(channelID)
 	req, _ := http.NewRequest(http.MethodGet, endpoint, nil)
 	req.Header.Set("Authorization", "Bearer "+t.twitchLogin.AuthToken())
-	req.Header.Set("Client-Id", ClientID)
+	req.Header.Set("Client-Id", twitchapi.ClientID)
 	if t.userAgent != "" {
 		req.Header.Set("User-Agent", t.userAgent)
 	}
@@ -54,8 +56,8 @@ func (t *Twitch) GetUserByID(channelID string) (*TwitchUserIdentity, error) {
 	}, nil
 }
 
-func (t *Twitch) GetChannelID(login string) (string, error) {
-	op := ClonePersistedOperation(GQLOperations.GetIDFromLogin)
+func (t *Client) GetChannelID(login string) (string, error) {
+	op := twitchapi.ClonePersistedOperation(twitchapi.GQLOperations.GetIDFromLogin)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -64,15 +66,15 @@ func (t *Twitch) GetChannelID(login string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	user := navigate(resp, "data.user.id")
+	user := jsonvalue.At(resp, "data.user.id")
 	if s, ok := user.(string); ok && s != "" {
 		return s, nil
 	}
 	return "", fmt.Errorf("user %s not found", login)
 }
 
-func (t *Twitch) GetFollowers(limit int, order domain.FollowersOrder) ([]string, error) {
-	op := ClonePersistedOperation(GQLOperations.ChannelFollows)
+func (t *Client) GetFollowers(limit int, order domain.FollowersOrder) ([]string, error) {
+	op := twitchapi.ClonePersistedOperation(twitchapi.GQLOperations.ChannelFollows)
 	if op.Variables == nil {
 		op.Variables = map[string]interface{}{}
 	}
@@ -88,7 +90,7 @@ func (t *Twitch) GetFollowers(limit int, order domain.FollowersOrder) ([]string,
 		if err != nil {
 			return nil, err
 		}
-		followsResp := navigate(resp, "data.user.follows")
+		followsResp := jsonvalue.At(resp, "data.user.follows")
 		if followsResp == nil {
 			break
 		}

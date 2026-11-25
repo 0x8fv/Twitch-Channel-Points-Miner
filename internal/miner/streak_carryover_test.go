@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"TwitchChannelPointsMiner/internal/domain"
+	"TwitchChannelPointsMiner/internal/streak"
 )
 
 func TestResolvedStreakShortRestartDoesNotPrioritizeStreak(t *testing.T) {
@@ -163,7 +164,7 @@ func TestResolvedStreakShortRestartCarryoverSurvivesMultipleRestartCycles(t *tes
 	m.setPresence(streamer, false, "poll")
 	secondOfflineAt := streamer.OfflineAt
 	secondCarryoverUntil := streamer.ResolvedStreakCarryoverUntil
-	wantSecondCarryoverUntil := secondOfflineAt.Add(resolvedStreakCarryoverWindow)
+	wantSecondCarryoverUntil := secondOfflineAt.Add(streak.CarryoverWindow)
 	if !secondCarryoverUntil.Equal(wantSecondCarryoverUntil) {
 		t.Fatalf("repeated short restart should extend carryover to latest offline time, got %s want %s", secondCarryoverUntil, wantSecondCarryoverUntil)
 	}
@@ -238,29 +239,6 @@ func TestResolvedStreakCarryoverPropagatesAfterOriginalExpiryAcrossShortRestarts
 	}
 }
 
-func TestRememberResolvedStreakCarryoverExtendsActiveWindowFromLatestOfflineTime(t *testing.T) {
-	firstOfflineAt := time.Date(2026, time.April, 30, 12, 0, 0, 0, time.UTC)
-	secondOfflineAt := firstOfflineAt.Add(5 * time.Minute)
-	streamer := &domain.Streamer{
-		CompletedWatchStreak: true,
-		OfflineAt:            firstOfflineAt,
-	}
-
-	rememberResolvedStreakCarryover(streamer, firstOfflineAt)
-	firstCarryoverUntil := streamer.ResolvedStreakCarryoverUntil
-
-	streamer.OfflineAt = secondOfflineAt
-	rememberResolvedStreakCarryover(streamer, secondOfflineAt)
-
-	want := secondOfflineAt.Add(resolvedStreakCarryoverWindow)
-	if !streamer.ResolvedStreakCarryoverUntil.Equal(want) {
-		t.Fatalf("carryover expiry got %s want %s", streamer.ResolvedStreakCarryoverUntil, want)
-	}
-	if !streamer.ResolvedStreakCarryoverUntil.After(firstCarryoverUntil) {
-		t.Fatalf("carryover expiry should move forward, got %s first %s", streamer.ResolvedStreakCarryoverUntil, firstCarryoverUntil)
-	}
-}
-
 func TestResolvedStreakCarryoverExpiresAfterWindow(t *testing.T) {
 	now := time.Now()
 	m := &Miner{}
@@ -286,21 +264,6 @@ func TestResolvedStreakCarryoverExpiresAfterWindow(t *testing.T) {
 	}
 	if !streamer.ResolvedStreakCarryoverUntil.IsZero() {
 		t.Fatalf("expired carryover timestamp should be cleared")
-	}
-}
-
-func TestActivateResolvedStreakCarryoverUsesRecentOfflineTime(t *testing.T) {
-	now := time.Now()
-	offlineAt := now.Add(-20 * time.Second)
-	streamer := &domain.Streamer{
-		OfflineAt: offlineAt,
-	}
-
-	activateResolvedStreakCarryover(streamer, now)
-
-	want := offlineAt.Add(resolvedStreakCarryoverWindow)
-	if !streamer.ResolvedStreakCarryoverUntil.Equal(want) {
-		t.Fatalf("carryover expiry got %s want %s", streamer.ResolvedStreakCarryoverUntil, want)
 	}
 }
 

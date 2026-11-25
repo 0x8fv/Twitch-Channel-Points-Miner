@@ -14,18 +14,19 @@ import (
 	"time"
 
 	"TwitchChannelPointsMiner/internal/domain"
+	"TwitchChannelPointsMiner/internal/twitchapi"
 )
 
-func (t *Twitch) GetSpadeURL(streamer *domain.Streamer) error {
+func (t *Client) GetSpadeURL(streamer *domain.Streamer) error {
 	if streamer.Stream == nil {
 		streamer.Stream = domain.NewStream()
 	}
 	headers := map[string]string{
-		"User-Agent": UserAgents["Linux"]["FIREFOX"],
+		"User-Agent": twitchapi.UserAgents["Linux"]["FIREFOX"],
 	}
 	pageURL := streamer.StreamerURL
 	if pageURL == "" {
-		pageURL = fmt.Sprintf("%s/%s", URL, streamer.Username)
+		pageURL = fmt.Sprintf("%s/%s", twitchapi.URL, streamer.Username)
 	}
 	mainReq, _ := http.NewRequest(http.MethodGet, pageURL, nil)
 	for k, v := range headers {
@@ -80,7 +81,7 @@ func (t *Twitch) GetSpadeURL(streamer *domain.Streamer) error {
 	return nil
 }
 
-func (t *Twitch) sendSpadePayload(spadeurl string, username string, rawpayload []map[string]interface{}) error {
+func (t *Client) sendSpadePayload(spadeurl string, username string, rawpayload []map[string]interface{}) error {
 	raw, err := json.Marshal(rawpayload)
 	if err != nil {
 		return err
@@ -119,10 +120,10 @@ func (t *Twitch) sendSpadePayload(spadeurl string, username string, rawpayload [
 }
 
 // ? check listed media segments
-func (t *Twitch) sendWatchPlaylist(streamer *domain.Streamer) error {
+func (t *Client) sendWatchPlaylist(streamer *domain.Streamer) error {
 	masterURL := ""
 	if streamer.Stream.PlaylistURL == "" {
-		op := ClonePersistedOperation(GQLOperations.PlaybackAccessToken)
+		op := twitchapi.ClonePersistedOperation(twitchapi.GQLOperations.PlaybackAccessToken)
 		op.Variables = map[string]interface{}{
 			"isLive": true, "isVod": false, "login": streamer.Username,
 			"platform": "web", "playerType": "site", "vodID": "",
@@ -182,7 +183,7 @@ func (t *Twitch) sendWatchPlaylist(streamer *domain.Streamer) error {
 	return nil
 }
 
-func (t *Twitch) readStreamPlaylist(ctx context.Context, address string) ([]*url.URL, error) {
+func (t *Client) readStreamPlaylist(ctx context.Context, address string) ([]*url.URL, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
 	if err != nil {
 		return nil, errors.New("invalid stream playlist URL")
@@ -231,7 +232,7 @@ func (t *Twitch) readStreamPlaylist(ctx context.Context, address string) ([]*url
 	return entries, nil
 }
 
-func (t *Twitch) SendMinuteWatched(streamer *domain.Streamer) error {
+func (t *Client) SendMinuteWatched(streamer *domain.Streamer) error {
 	if err := t.UpdateStream(streamer); err != nil {
 		return err
 	}

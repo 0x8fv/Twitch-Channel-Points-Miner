@@ -8,8 +8,11 @@ import (
 	"time"
 
 	"TwitchChannelPointsMiner/internal/ansi"
+	"TwitchChannelPointsMiner/internal/chat"
 	"TwitchChannelPointsMiner/internal/domain"
+	"TwitchChannelPointsMiner/internal/logging"
 	"TwitchChannelPointsMiner/internal/privacy"
+	"TwitchChannelPointsMiner/internal/streak"
 	"TwitchChannelPointsMiner/internal/twitch"
 )
 
@@ -61,13 +64,13 @@ type Miner struct {
 	Password                   string
 	ClaimDropsStartup          bool
 	DisableSSLCertVerification bool
-	LoggerSettings             LoggerSettings
+	LoggerSettings             logging.LoggerSettings
 	StreamerSettings           domain.StreamerSettings
 	StreamerOverrides          map[string]domain.StreamerSettings
 	WatchStreakWarmStartCache  bool
-	logger                     *Logger
+	logger                     *logging.Logger
 	startedAt                  time.Time
-	twitch                     *twitch.Twitch
+	twitch                     *twitch.Client
 	streamers                  []*domain.Streamer
 	initialPoints              map[string]int
 	stop                       chan struct{}
@@ -76,20 +79,19 @@ type Miner struct {
 	gamePriority               []string
 	gamePriorityIndex          map[string]int
 	gameExclusions             map[string]struct{}
-	chatWatchers               map[string]*twitch.ChatClient
-	chatMu                     sync.Mutex
+	chat                       *chat.Presence
 	disableAtInNickname        bool
 	showGameInfo               bool
 	showDropsProgress          bool
 	logWatchQueue              bool
 	anonymizer                 *privacy.Anonymizer
-	warmStartCache             *watchStreakWarmStartCache
+	warmStartCache             *streak.WarmStartCache
 	warmStartCachePath         string
-	activeStreakWatches        map[string]activeStreakWatch
+	activeStreakWatches        map[string]streak.ActiveWatch
 	activeStreakMu             sync.Mutex
 }
 
-func NewMiner(username, password string, claimDropsStartup bool, disableCertCheck bool, loggerSettings LoggerSettings, streamerSettings domain.StreamerSettings, streamerOverrides map[string]domain.StreamerSettings, priorityNames []string, streamerExclude []string, gamePriority []string, gameExclude []string, disableAtInNickname bool, showGameInfo bool, logWatchQueue bool, watchStreakWarmStartCache bool, showDropsProgress bool) *Miner {
+func NewMiner(username, password string, claimDropsStartup bool, disableCertCheck bool, loggerSettings logging.LoggerSettings, streamerSettings domain.StreamerSettings, streamerOverrides map[string]domain.StreamerSettings, priorityNames []string, streamerExclude []string, gamePriority []string, gameExclude []string, disableAtInNickname bool, showGameInfo bool, logWatchQueue bool, watchStreakWarmStartCache bool, showDropsProgress bool) *Miner {
 	streamerSettings.Default()
 	priorityList := normalizeGameList(gamePriority)
 	excludedGames := make(map[string]struct{})
@@ -104,12 +106,12 @@ func NewMiner(username, password string, claimDropsStartup bool, disableCertChec
 	for idx, name := range priorityList {
 		priorityIndex[name] = idx
 	}
-	safeUsername := sanitizeFilename(strings.ToLower(strings.TrimSpace(username)))
+	safeUsername := logging.SanitizeFilename(strings.ToLower(strings.TrimSpace(username)))
 	warmStartCachePath := ""
 	if safeUsername != "" {
 		warmStartCachePath = filepath.Join("log", fmt.Sprintf("watch_streak_cache.%s.json", safeUsername))
 	}
-	return &Miner{
+	m := &Miner{
 		Username:                   username,
 		Password:                   password,
 		ClaimDropsStartup:          claimDropsStartup,
@@ -118,21 +120,30 @@ func NewMiner(username, password string, claimDropsStartup bool, disableCertChec
 		StreamerSettings:           streamerSettings,
 		StreamerOverrides:          streamerOverrides,
 		WatchStreakWarmStartCache:  watchStreakWarmStartCache,
-		logger:                     NewLogger(loggerSettings, username),
+		logger:                     logging.NewLogger(loggerSettings, username),
 		watchPriorities:            parseWatchPriorities(priorityNames),
 		streamerExclusions:         excludedStreamers,
 		gamePriority:               priorityList,
 		gamePriorityIndex:          priorityIndex,
 		gameExclusions:             excludedGames,
-		chatWatchers:               make(map[string]*twitch.ChatClient),
 		disableAtInNickname:        disableAtInNickname,
 		showGameInfo:               showGameInfo,
 		showDropsProgress:          showDropsProgress,
 		logWatchQueue:              logWatchQueue,
 		anonymizer:                 privacy.New(loggerSettings.AnonymizeLogs),
 		warmStartCachePath:         warmStartCachePath,
-		activeStreakWatches:        make(map[string]activeStreakWatch),
+		activeStreakWatches:        make(map[string]streak.ActiveWatch),
 	}
+	m.chat = chat.NewPresence(username, m.chatToken, m.logger, disableAtInNickname, m.anonymizer, m.styledStreamerName)
+	return m
+}
+
+// chatToken is empty until the miner has logged in.
+func (m *Miner) chatToken() string {
+	if m.twitch == nil {
+		return ""
+	}
+	return m.twitch.ChatToken()
 }
 
 // ? Mine runs the miner for an explicit list of streamers.

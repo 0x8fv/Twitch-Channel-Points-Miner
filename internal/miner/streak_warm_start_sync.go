@@ -4,13 +4,14 @@ import (
 	"time"
 
 	"TwitchChannelPointsMiner/internal/domain"
+	"TwitchChannelPointsMiner/internal/streak"
 )
 
 func (m *Miner) loadWarmStartCache() {
 	if m == nil || !m.WatchStreakWarmStartCache {
 		return
 	}
-	m.warmStartCache = loadWatchStreakWarmStartCache(m.warmStartCachePath, m.Username)
+	m.warmStartCache = streak.LoadWarmStartCache(m.warmStartCachePath, m.Username)
 }
 
 func (m *Miner) saveWarmStartCacheSnapshot(streamers []*domain.Streamer) {
@@ -19,9 +20,9 @@ func (m *Miner) saveWarmStartCacheSnapshot(streamers []*domain.Streamer) {
 	}
 	now := time.Now()
 	for _, streamer := range streamers {
-		m.warmStartCache.updateFromStreamer(streamer, now)
+		m.warmStartCache.UpdateFromStreamer(streamer, now)
 	}
-	if err := m.warmStartCache.saveIfDirty(); err != nil && m.logger != nil {
+	if err := m.warmStartCache.SaveIfDirty(); err != nil && m.logger != nil {
 		m.logger.Debugf("warm-start cache save failed: %v", err)
 	}
 }
@@ -30,8 +31,8 @@ func (m *Miner) syncWarmStartCacheFromStreamer(streamer *domain.Streamer) {
 	if m == nil || m.warmStartCache == nil || streamer == nil {
 		return
 	}
-	m.warmStartCache.updateFromStreamer(streamer, time.Now())
-	if err := m.warmStartCache.saveIfDirty(); err != nil && m.logger != nil {
+	m.warmStartCache.UpdateFromStreamer(streamer, time.Now())
+	if err := m.warmStartCache.SaveIfDirty(); err != nil && m.logger != nil {
 		m.logger.Debugf("warm-start cache save failed for %s: %v", m.rawStreamerName(streamer.Username), err)
 	}
 }
@@ -40,7 +41,7 @@ func (m *Miner) applyWarmStartCache(streamer *domain.Streamer) bool {
 	if m == nil || m.warmStartCache == nil || streamer == nil || streamer.Stream == nil || !streamer.IsOnline {
 		return false
 	}
-	entry, ok := m.warmStartCache.resolvedEntryForStreamer(streamer, time.Now())
+	entry, ok := m.warmStartCache.ResolvedEntryFor(streamer, time.Now())
 	if !ok {
 		return false
 	}
