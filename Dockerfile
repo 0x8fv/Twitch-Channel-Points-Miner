@@ -8,7 +8,7 @@ RUN go mod download
 COPY . .
 ARG TARGETOS TARGETARCH
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -trimpath -buildvcs=false -ldflags "-s -w" -o /out/twitch-miner .
+    go build -trimpath -buildvcs=false -ldflags "-s -w" -o /out/twitch-miner ./cmd/twitch-miner
 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata \

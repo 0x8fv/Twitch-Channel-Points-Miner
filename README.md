@@ -20,7 +20,7 @@ Go rewrite of [0x8fv/Twitch-Channel-Points-Miner-v2](https://github.com/0x8fv/Tw
 ## Quick start
 1) Install Go 1.21+.
 2) Copy `config.json` (it will be created/extended on first run) and set `username` plus any options you want. Leave the `streamers` array empty to mine all followed channels.
-3) Run `go run .` (or `go build -o twitch-miner` and execute `./twitch-miner`).
+3) Run `go run ./cmd/twitch-miner` (or `go build -o twitch-miner ./cmd/twitch-miner` and execute `./twitch-miner`).
 4) On first launch you will see a device code prompt. Open `https://www.twitch.tv/activate`, enter the code, and wait until the app confirms login. Cookies are saved to `cookies/<username>.json` for future runs.
 5) Press Ctrl+C to stop; a session summary is printed on exit.
 
@@ -113,7 +113,7 @@ A small built-in web dashboard (no external assets) shows every streamer's balan
 - JSON API: `GET /api/streamers` and `GET /api/streamer/{name}?range=24h|7d|30d|all`.
 
 ## Docker
-A multi-arch image (`linux/amd64`, `linux/arm64`) is published to GHCR on every change to `main`. In a fork, a daily run of the same workflow first merges upstream into it. Replace `OWNER` with the lowercase GitHub account that owns the repository.
+A multi-arch image (`linux/amd64`, `linux/arm64`) is published to GHCR on every change to `main`. Replace `OWNER` with the lowercase GitHub account that owns the repository.
 
 ```sh
 docker run -d --name twitch-miner --restart unless-stopped \
@@ -137,6 +137,22 @@ services:
 - First login: run `docker logs -f twitch-miner`, open `https://www.twitch.tv/activate` and enter the device code shown in the logs. The session is saved to `/data/cookies`, so this is only needed once.
 - The self-updater is disabled inside the image (`TCPM_DISABLE_AUTO_UPDATE=1`) whatever `auto_update` says; update with `docker pull` (or `docker compose pull && docker compose up -d`).
 - Set `TZ` (e.g. `-e TZ=Europe/Madrid`) or the `timezone` config key for local timestamps.
+
+## Project layout
+Folders are named after what the code is about, and each file has one job.
+
+| Folder | What it holds |
+|---|---|
+| `cmd/twitch-miner` | The program entry point: paths, console setup and `config.json` loading. |
+| `internal/miner` | The miner itself: watching streams, watch streaks, drops, points, presence, and the console logger. |
+| `internal/twitch` | Everything that talks to Twitch: login, GQL, streams, minute-watched, drops, predictions, PubSub and chat. |
+| `internal/domain` | The things being mined: streamers, streams, bet and streamer settings, community goals. |
+| `internal/events` | The event types the miner reports, with their polarity and glyph. |
+| `internal/notify` | Discord and Telegram notifications and the sentences they send. |
+| `internal/dashboard` | The analytics store, its HTTP API and the web page. |
+| `internal/privacy` | Log anonymisation. |
+| `internal/update` | The self-updater. |
+| `internal/ansi`, `internal/jsonfile` | Console colours; writing JSON files. |
 
 ## How it works
 - Authenticates via Twitch device flow, persists cookies per user, and refreshes the client build id for GQL calls.

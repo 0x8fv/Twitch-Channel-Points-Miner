@@ -41,7 +41,7 @@ try {
         $outputPath = Join-Path $dist $name
 
         Write-Host "Building $name..."
-        go build -trimpath -buildvcs=false -ldflags "-s -w" -o $outputPath .
+        go build -trimpath -buildvcs=false -ldflags "-s -w" -o $outputPath ./cmd/twitch-miner
     }
 }
 finally {

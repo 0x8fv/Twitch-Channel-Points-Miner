@@ -1,10 +1,6 @@
 name: docker
 
-# Publishes the image to GHCR. In a fork it also keeps main in sync with upstream.
-#   push to main      -> build
-#   schedule/dispatch -> in a fork: sync with upstream, then build in the same run
-#                        elsewhere: build only (skipped when the image already exists)
-#                        (pushes made with GITHUB_TOKEN do not trigger workflows)
+# Publishes the image to GHCR on every push to main.
 on:
   push:
     branches: [main]
@@ -14,11 +10,9 @@ on:
         description: Rebuild even if the image for this commit already exists
         type: boolean
         default: false
-  schedule:
-    - cron: "17 4 * * *"
 
 permissions:
-  contents: write
+  contents: read
   packages: write
 
 concurrency:
@@ -26,33 +20,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  sync:
-    name: Sync with upstream
-    if: github.event_name != 'push' && github.event.repository.fork
-    runs-on: ubuntu-latest
-    steps:
-      - name: Merge upstream into main
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          if ! out=$(gh api -X POST "repos/${GITHUB_REPOSITORY}/merge-upstream" -f branch=main 2>&1); then
-            echo "::error title=Upstream sync failed::main could not be merged with upstream (merge conflict, or upstream changed workflow files, which GITHUB_TOKEN may not push). Resolve it manually. API response: ${out}"
-            exit 1
-          fi
-          echo "${out}"
-
   build:
     name: Build and push image
-    needs: sync
-    # Runs after a successful sync, or directly on push (sync skipped). A failed sync stops here.
-    if: ${{ !cancelled() && (needs.sync.result == 'success' || needs.sync.result == 'skipped') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          # After a sync the branch tip is newer than the commit that started this run.
-          ref: ${{ github.event_name == 'push' && github.sha || 'main' }}
 
       - name: Resolve image name and tags
         id: meta
