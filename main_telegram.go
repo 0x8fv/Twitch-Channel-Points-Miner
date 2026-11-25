@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	miner "TwitchChannelPointsMiner/TwitchChannelPointsMiner"
+	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/notify"
 )
 
 // chatID accepts a JSON number (123456789, -1001234567890) or string ("@channel").
@@ -49,8 +49,8 @@ func defaultTelegramConfig() map[string]interface{} {
 	}
 }
 
-func (c telegramConfig) settings() miner.TelegramSettings {
-	return miner.TelegramSettings{
+func (c telegramConfig) settings() notify.TelegramSettings {
+	return notify.TelegramSettings{
 		ChatID:              string(c.ChatID),
 		Token:               c.Token,
 		Events:              c.Events,

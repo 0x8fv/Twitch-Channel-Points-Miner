@@ -1,0 +1,9 @@
+.loghead { display: flex; align-items: baseline; justify-content: space-between; margin-top: 32px; }
+.loghead h2 { font-size: 14px; font-weight: 500; }
+#log { list-style: none; }
+#log .day { padding: 16px 0 8px; font-size: 12px; line-height: 16px; color: var(--muted); }
+#log .ev { display: grid; grid-template-columns: 72px 136px minmax(0, 1fr); align-items: start; gap: 16px; padding: 8px 0; border-top: 1px solid var(--hair); font-size: 13px; }
+#log time { font-size: 12px; color: var(--muted); white-space: nowrap; }
+#log .m { color: var(--ink2); overflow-wrap: anywhere; }
+#more { height: 32px; margin-top: 12px; padding: 0 12px; border: 1px solid var(--hair); border-radius: 8px; font-size: 13px; color: var(--ink2); }
+#more:hover { background: var(--hover); color: var(--ink); }

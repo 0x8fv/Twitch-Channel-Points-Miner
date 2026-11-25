@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Channel Points Miner</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M2 13h4V9h4V5h4' fill='none' stroke='%239146ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<script>
+// Theme is set before first paint so the page never flashes the wrong one.
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('tcpm.theme'); } catch (e) {}
+  document.documentElement.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+})();
+</script>
+<style>
+/*styles*/
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side" aria-label="Streamers">
+    <div class="brand">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 13h4V9h4V5h4"/></svg>
+      <h1>Channel Points Miner</h1>
+    </div>
+    <div class="totals">
+      <div class="lbl">Total balance</div>
+      <div class="fig num" id="t-points">–</div>
+      <dl>
+        <div><dt>This session</dt><dd class="num" id="t-gain">–</dd></div>
+        <div><dt>Online</dt><dd class="num" id="t-online">–</dd></div>
+      </dl>
+    </div>
+    <div class="filter">
+      <input id="q" type="search" placeholder="Filter" aria-label="Filter streamers" autocomplete="off" spellcheck="false">
+      <kbd aria-hidden="true">/</kbd>
+    </div>
+    <div class="sorts" role="group" aria-label="Sort streamers">
+      <button type="button" data-sort="points">Balance</button>
+      <button type="button" data-sort="gain">Session</button>
+      <button type="button" data-sort="name">Name</button>
+    </div>
+    <ul id="list"><li class="empty">Loading</li></ul>
+    <div class="foot">
+      <span id="status" class="num" role="status"></span>
+      <button id="theme" type="button"></button>
+    </div>
+  </aside>
+  <main class="main">
+    <div class="wrap">
+      <div class="bar">
+        <a id="d-name" target="_blank" rel="noopener">–</a>
+        <span id="d-state"></span>
+        <div class="ranges" role="group" aria-label="Date range">
+          <button type="button" data-range="24h">24h</button>
+          <button type="button" data-range="7d">7d</button>
+          <button type="button" data-range="30d">30d</button>
+          <button type="button" data-range="all">All</button>
+        </div>
+      </div>
+      <div class="hero">
+        <div>
+          <div class="lbl">Balance</div>
+          <div id="d-points" class="num">–</div>
+          <div id="d-delta"></div>
+        </div>
+        <dl class="stats">
+          <div><dt class="lbl" id="s-low-l">Low</dt><dd class="num" id="s-low">–</dd></div>
+          <div><dt class="lbl" id="s-high-l">High</dt><dd class="num" id="s-high">–</dd></div>
+          <div><dt class="lbl">This session</dt><dd class="num" id="s-session">–</dd></div>
+        </dl>
+      </div>
+      <section class="card" aria-label="Balance over time">
+        <div class="plot" id="plot">
+          <canvas id="cv" role="img" aria-label="Channel points over time"></canvas>
+          <canvas id="ov" aria-hidden="true"></canvas>
+          <div id="tip" role="tooltip" hidden></div>
+        </div>
+        <div class="legend" id="legend" aria-label="Event types, click to show or hide"></div>
+      </section>
+      <section class="logsec" aria-labelledby="log-h">
+        <div class="loghead"><h2 id="log-h">Activity</h2><span class="lbl num" id="log-n"></span></div>
+        <ul id="log"></ul>
+        <button id="more" type="button" hidden></button>
+      </section>
+    </div>
+  </main>
+</div>
+<script>
+'use strict';
+/*scripts*/
+</script>
+</body>
+</html>

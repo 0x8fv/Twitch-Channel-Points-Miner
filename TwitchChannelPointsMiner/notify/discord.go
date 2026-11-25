@@ -1,4 +1,4 @@
-package twitchchannelpointsminer
+package notify
 
 import (
 	"bytes"
@@ -69,7 +69,7 @@ func (d *DiscordWebhook) Send(message string, event constants.Event) {
 	if d == nil || !wantsEvent(d.events, event) {
 		return
 	}
-	body := eventSentence(message)
+	body := Sentence(message)
 	title := eventGlyphPrefix(event) + eventTitle(event)
 	if strings.EqualFold(body, title) {
 		body = ""

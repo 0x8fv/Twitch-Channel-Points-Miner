@@ -1,4 +1,4 @@
-package twitchchannelpointsminer
+package notify
 
 import (
 	"encoding/json"

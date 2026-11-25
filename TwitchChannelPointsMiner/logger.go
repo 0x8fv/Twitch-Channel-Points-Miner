@@ -11,28 +11,29 @@ import (
 	"time"
 
 	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/constants"
+	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/notify"
 )
 
 type LoggerSettings struct {
-	Save             bool            `json:"save"`
-	ConsoleLevel     int             `json:"console_level"`
-	FileLevel        int             `json:"file_level"`
-	Emoji            bool            `json:"emoji"`
-	Smart            bool            `json:"smart"`
-	ShowSeconds      bool            `json:"show_seconds"`
-	ConsoleUsername  bool            `json:"console_username"`
-	ShowClaimedBonus bool            `json:"show_claimed_bonus_msg"`
-	Less             bool            `json:"less"`
-	Debug            bool            `json:"debug"`
-	DebugDeep        bool            `json:"debug_deep"`
-	AnonymizeLogs    bool            `json:"anonymize_logs"`
-	Discord          DiscordSettings `json:"discord"`
+	Save             bool                   `json:"save"`
+	ConsoleLevel     int                    `json:"console_level"`
+	FileLevel        int                    `json:"file_level"`
+	Emoji            bool                   `json:"emoji"`
+	Smart            bool                   `json:"smart"`
+	ShowSeconds      bool                   `json:"show_seconds"`
+	ConsoleUsername  bool                   `json:"console_username"`
+	ShowClaimedBonus bool                   `json:"show_claimed_bonus_msg"`
+	Less             bool                   `json:"less"`
+	Debug            bool                   `json:"debug"`
+	DebugDeep        bool                   `json:"debug_deep"`
+	AnonymizeLogs    bool                   `json:"anonymize_logs"`
+	Discord          notify.DiscordSettings `json:"discord"`
 }
 
 type Logger struct {
 	base     *log.Logger
 	settings LoggerSettings
-	discord  *DiscordWebhook
+	discord  *notify.DiscordWebhook
 }
 
 type dualWriter struct {
@@ -80,7 +81,7 @@ func NewLogger(settings LoggerSettings, username string) *Logger {
 	return &Logger{
 		base:     log.New(output, "", 0),
 		settings: settings,
-		discord:  NewDiscordWebhook(settings.Discord),
+		discord:  notify.NewDiscordWebhook(settings.Discord),
 	}
 }
 
@@ -114,7 +115,7 @@ func (l *Logger) logEvent(level, emoji string, event constants.Event, format str
 	if event != "" {
 		// Console keeps the full line, including its polarity glyph. Telegram,
 		// Discord and chart tooltips get a sentence built from the raw line.
-		presented := eventSentence(message)
+		presented := notify.Sentence(message)
 		if l.discord != nil {
 			l.discord.Send(presented, event)
 		}

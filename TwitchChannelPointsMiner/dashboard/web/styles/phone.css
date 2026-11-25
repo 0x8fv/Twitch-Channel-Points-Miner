@@ -1,0 +1,24 @@
+@media (max-width: 820px) {
+  html, body { height: auto; }
+  /* Phone order: balance and chart, then the streamer list, then the activity log,
+     so switching streamers never means scrolling past the whole log. */
+  .app { display: flex; flex-direction: column; height: auto; }
+  .main, .wrap { display: contents; }
+  .bar, .hero, .card, .logsec { margin-left: 16px; margin-right: 16px; }
+  .side { order: 1; margin-top: 24px; border-right: 0; border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); }
+  .logsec { order: 2; padding-bottom: 32px; }
+  .loghead { margin-top: 24px; }
+  .foot { border-top: 0; }
+  /* The tooltip docks under the chart instead of covering the line under the finger. */
+  #tip { top: 100%; right: 0; max-width: none; margin-top: 4px; transform: none !important; }
+  #list { overflow: visible; }
+  #d-points { font-size: 32px; line-height: 36px; }
+  .stats { margin-left: 0; width: 100%; }
+  .stats div { flex: 1; padding: 0 12px; }
+  .stats div:first-child { padding-left: 0; border-left: 0; }
+  .card { padding: 16px 12px 12px; }
+  .plot { height: 320px; }
+  #log .ev { grid-template-columns: 72px minmax(0, 1fr); gap: 4px 12px; }
+  #log .m { grid-column: 2; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

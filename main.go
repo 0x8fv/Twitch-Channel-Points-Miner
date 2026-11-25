@@ -17,6 +17,7 @@ import (
 	miner "TwitchChannelPointsMiner/TwitchChannelPointsMiner"
 	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/classes/entities"
 	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/constants"
+	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/notify"
 	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/utils"
 )
 
@@ -167,41 +168,41 @@ type discordConfig struct {
 }
 
 type config struct {
-	Username                   string        `json:"username"`
-	Password                   string        `json:"password"`
-	AutoUpdate                 bool          `json:"auto_update"`
-	Debug                      bool          `json:"debug"`
-	DebugDeep                  bool          `json:"debug_deep"`
-	WatchQueueLogging          bool          `json:"watch_queue_logging"`
-	SmartLogging               bool          `json:"smart_logging"`
-	DisableSSLCertVerification bool          `json:"disable_ssl_cert_verification"`
-	ShowSeconds                bool          `json:"show_seconds"`
-	ClaimDropsStartup          bool          `json:"claim_drops_startup"`
-	ClaimDrops                 bool          `json:"claim_drops"`
-	ClaimMoments               bool          `json:"claim_moments"`
-	BettingMakePredictions     bool          `json:"betting(make_predictions)"`
-	FollowRaid                 bool          `json:"follow_raid"`
-	CommunityGoals             bool          `json:"community_goals"`
-	Emojis                     bool          `json:"emojis"`
-	SaveLogs                   bool          `json:"save_logs"`
-	ShowUsernameInConsole      bool          `json:"show_username_in_console"`
-	ShowClaimedBonusMsg        bool          `json:"show_claimed_bonus_msg"`
-	ShowGame                   bool          `json:"show_game"`
-	WatchStreakWarmStartCache  bool          `json:"watch_streak_warm_start_cache"`
-	IRCMode                    string        `json:"chat_presence"`
-	DisableAtInNickname        bool          `json:"disable_at_in_nickname"`
-	ShowDropsProgress          bool          `json:"show_drops_progress"`
-	Streamers                  []string      `json:"streamers"`
-	StreamersExclude           []string      `json:"streamers_exclude"`
-	GamePriority               []string      `json:"game_priority"`
-	GameExclude                []string      `json:"game_exclude"`
-	WatchPriority              []string      `json:"watch_priority"`
-	Bet                        betConfig     `json:"bet"`
-	Timezone                   *string       `json:"timezone"`
-	Privacy                    privacyConfig `json:"privacy"`
-	Discord                    discordConfig `json:"discord"`
+	Username                   string          `json:"username"`
+	Password                   string          `json:"password"`
+	AutoUpdate                 bool            `json:"auto_update"`
+	Debug                      bool            `json:"debug"`
+	DebugDeep                  bool            `json:"debug_deep"`
+	WatchQueueLogging          bool            `json:"watch_queue_logging"`
+	SmartLogging               bool            `json:"smart_logging"`
+	DisableSSLCertVerification bool            `json:"disable_ssl_cert_verification"`
+	ShowSeconds                bool            `json:"show_seconds"`
+	ClaimDropsStartup          bool            `json:"claim_drops_startup"`
+	ClaimDrops                 bool            `json:"claim_drops"`
+	ClaimMoments               bool            `json:"claim_moments"`
+	BettingMakePredictions     bool            `json:"betting(make_predictions)"`
+	FollowRaid                 bool            `json:"follow_raid"`
+	CommunityGoals             bool            `json:"community_goals"`
+	Emojis                     bool            `json:"emojis"`
+	SaveLogs                   bool            `json:"save_logs"`
+	ShowUsernameInConsole      bool            `json:"show_username_in_console"`
+	ShowClaimedBonusMsg        bool            `json:"show_claimed_bonus_msg"`
+	ShowGame                   bool            `json:"show_game"`
+	WatchStreakWarmStartCache  bool            `json:"watch_streak_warm_start_cache"`
+	IRCMode                    string          `json:"chat_presence"`
+	DisableAtInNickname        bool            `json:"disable_at_in_nickname"`
+	ShowDropsProgress          bool            `json:"show_drops_progress"`
+	Streamers                  []string        `json:"streamers"`
+	StreamersExclude           []string        `json:"streamers_exclude"`
+	GamePriority               []string        `json:"game_priority"`
+	GameExclude                []string        `json:"game_exclude"`
+	WatchPriority              []string        `json:"watch_priority"`
+	Bet                        betConfig       `json:"bet"`
+	Timezone                   *string         `json:"timezone"`
+	Privacy                    privacyConfig   `json:"privacy"`
+	Discord                    discordConfig   `json:"discord"`
 	Analytics                  analyticsConfig `json:"analytics"`
-	Telegram                   telegramConfig `json:"telegram"`
+	Telegram                   telegramConfig  `json:"telegram"`
 
 	StreamerOverrides map[string]streamerSettingsConfig `json:"streamer_overrides"`
 }
@@ -612,7 +613,7 @@ func main() {
 		Debug:            cfg.Debug,
 		DebugDeep:        cfg.DebugDeep,
 		AnonymizeLogs:    cfg.Privacy.AnonymizeLogs,
-		Discord: miner.DiscordSettings{
+		Discord: notify.DiscordSettings{
 			WebhookAPI: cfg.Discord.WebhookAPI,
 			Events:     cfg.Discord.Events,
 		},
