@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/constants"
@@ -42,7 +41,7 @@ func TestDiscordWebhookSendsEmbed(t *testing.T) {
 		t.Fatalf("content type %q", types[0])
 	}
 	embed := bodies[0].Embeds[0]
-	if embed.Title != "Online" || embed.Description != "Alice is online with 1.2k points, playing Valorant. The watch streak is 2." || embed.Color != 0x0A7A2F {
+	if embed.Title != "🟢 Online" || embed.Description != "Alice is online with 1.2k points, playing Valorant. The watch streak is 2." || embed.Color != 0x0A7A2F {
 		t.Fatalf("unexpected embed %+v", embed)
 	}
 	if bodies[0].Username != discordUsername {
@@ -51,7 +50,7 @@ func TestDiscordWebhookSendsEmbed(t *testing.T) {
 
 	named := NewDiscordWebhook(DiscordSettings{WebhookAPI: srv.URL, Events: []string{"GAIN_FOR_WATCH"}})
 	named.Send("tick", constants.EventGainForWatch)
-	if len(bodies) != 2 || !strings.HasPrefix(bodies[1].Embeds[0].Title, "Watch") {
+	if len(bodies) != 2 || bodies[1].Embeds[0].Title != "➕ Watch" {
 		t.Fatalf("explicit watch event should be delivered, got %+v", bodies)
 	}
 }

@@ -70,7 +70,7 @@ func (d *DiscordWebhook) Send(message string, event constants.Event) {
 		return
 	}
 	body := eventSentence(message)
-	title := eventTitle(event)
+	title := eventGlyphPrefix(event) + eventTitle(event)
 	if strings.EqualFold(body, title) {
 		body = ""
 	}
