@@ -1,0 +1,4 @@
+#!/bin/sh
+# Runs what CI runs before anything leaves this machine.
+# Enable once per clone: git config core.hooksPath .githooks
+exec sh "$(git rev-parse --show-toplevel)/ci/check.sh" all

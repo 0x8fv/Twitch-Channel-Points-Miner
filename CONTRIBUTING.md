@@ -148,6 +148,30 @@ Unformatted code will not be accepted.
 
 ---
 
+## Checks and Git Hooks
+
+CI runs three jobs side by side: formatting, vetting and module tidiness; the tests; and a build for every released platform. The same checks run locally with one script:
+
+```bash
+sh ci/check.sh        # everything
+sh ci/check.sh lint   # gofmt, go vet, go mod tidy
+sh ci/check.sh test   # tests
+sh ci/check.sh build  # every released platform
+```
+
+Enable the hooks once per clone so they run without being remembered:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+- `pre-commit` formats and vets the Go files being committed.
+- `pre-push` runs `ci/check.sh`, the same checks CI runs.
+
+Rules for CI changes: never retry a failing check, never skip or loosen one, and never raise a time budget without a measured reason.
+
+---
+
 ## Linting
 
 We recommend using **golangci-lint**:

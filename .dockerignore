@@ -7,3 +7,6 @@ cookies
 analytics
 config.json
 *.md
+ci
+.githooks
+.gitattributes

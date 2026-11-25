@@ -1,0 +1,5 @@
+# One line ending everywhere: gofmt, the shell scripts and the embedded web files
+# all need LF, whatever the machine that checked them out.
+* text=auto eol=lf
+*.png binary
+*.ico binary

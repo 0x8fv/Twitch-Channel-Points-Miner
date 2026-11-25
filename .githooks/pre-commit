@@ -1,0 +1,22 @@
+#!/bin/sh
+# Formats and vets the Go files being committed.
+# Enable once per clone: git config core.hooksPath .githooks
+set -u
+
+files=$(git diff --cached --name-only --diff-filter=ACMR -- '*.go')
+[ -z "$files" ] && exit 0
+
+status=0
+for file in $files; do
+	[ -z "$(gofmt -l "$file")" ] && continue
+	if git diff --quiet -- "$file"; then
+		# Fully staged, so formatting it cannot pull in changes you did not stage.
+		gofmt -w "$file" && git add -- "$file" && echo "formatted $file"
+	else
+		echo "$file is not gofmt-formatted and has unstaged changes: run gofmt -w $file and stage it"
+		status=1
+	fi
+done
+[ $status -eq 0 ] || exit $status
+
+go vet ./...
