@@ -5,6 +5,7 @@
 #   ci/check.sh lint    gofmt, go vet, go mod tidy
 #   ci/check.sh test    the test suite
 #   ci/check.sh build   every released platform, plus the Docker platforms
+#   ci/check.sh build linux/arm64   one platform
 #   ci/check.sh all     all of the above
 #
 # Every check runs even after one fails, and all failures are listed at the end.
@@ -54,7 +55,7 @@ check_tidy() {
 check_build() {
 	out=$(mktemp -d) || return 1
 	status=0
-	for target in $RELEASE_TARGETS; do
+	for target in ${1:-$RELEASE_TARGETS}; do
 		echo "building $target"
 		GOOS=${target%/*} GOARCH=${target#*/} CGO_ENABLED=0 go build -o "$out/" ./cmd/twitch-miner || status=1
 	done
@@ -127,7 +128,7 @@ test)
 	run "tests" check_test
 	;;
 build)
-	run "build" check_build
+	run "build" check_build "${2:-}"
 	;;
 all)
 	run "gofmt" check_format

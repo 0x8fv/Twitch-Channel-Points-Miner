@@ -1,8 +1,9 @@
 name: ci
 
-# Three jobs, none waiting on another. Pull requests reuse Go's test cache from
-# main, so only packages a change can reach are run again. Pushes to main and
-# merge-queue runs execute every test from scratch, in random order.
+# Lint, tests and one build per platform, none waiting on another. Pull requests
+# reuse Go's test cache from main, so only packages a change can reach are run
+# again. Pushes to main and merge-queue runs execute every test from scratch, in
+# random order.
 on:
   pull_request:
   merge_group:
@@ -62,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     env:
-      BUDGET_SECONDS: 60
+      BUDGET_SECONDS: 75
       # Everything except a pull request runs the whole suite from scratch.
       CHECK_FULL: ${{ github.event_name != 'pull_request' && '1' || '' }}
     steps:
@@ -84,6 +85,11 @@ jobs:
           restore-keys: go-test-${{ runner.os }}-
       - name: go test
         run: sh ci/check.sh test
+      # A from-scratch run stores no test results. This second, cacheable pass
+      # records them so pull requests can skip packages they did not touch.
+      - name: Record test results for pull requests
+        if: github.ref == 'refs/heads/main'
+        run: CHECK_FULL= sh ci/check.sh test
       # Only main writes the cache, so a pull request cannot seed it with results
       # from code that never merged.
       - uses: actions/cache/save@v4
@@ -98,11 +104,16 @@ jobs:
         run: sh ci/budget.sh
 
   build:
-    name: Build every platform
+    name: Build ${{ matrix.target }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
+    strategy:
+      fail-fast: false
+      matrix:
+        # Keep in step with RELEASE_TARGETS in ci/check.sh.
+        target: [windows/amd64, linux/amd64, linux/arm64, darwin/amd64, darwin/arm64]
     env:
-      BUDGET_SECONDS: 60
+      BUDGET_SECONDS: 45
     steps:
       - name: Start the clock
         run: echo "JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
@@ -118,17 +129,17 @@ jobs:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: go-build-${{ runner.os }}-${{ github.sha }}
-          restore-keys: go-build-${{ runner.os }}-
+          key: go-build-${{ matrix.target }}-${{ github.sha }}
+          restore-keys: go-build-${{ matrix.target }}-
       - name: go build
-        run: sh ci/check.sh build
+        run: sh ci/check.sh build ${{ matrix.target }}
       - uses: actions/cache/save@v4
         if: github.ref == 'refs/heads/main'
         with:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: go-build-${{ runner.os }}-${{ github.sha }}
+          key: go-build-${{ matrix.target }}-${{ github.sha }}
       - name: Budget
         if: always()
         run: sh ci/budget.sh
