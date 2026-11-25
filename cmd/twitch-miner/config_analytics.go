@@ -20,7 +20,7 @@ type analyticsConfig struct {
 func defaultAnalyticsConfig() map[string]interface{} {
 	return map[string]interface{}{
 		"enabled": true,
-		"host":    "0.0.0.0",
+		"host":    "127.0.0.1",
 		"port":    5000,
 	}
 }
@@ -32,7 +32,7 @@ func analyticsAddr(cfg analyticsConfig) string {
 	}
 	host := strings.TrimSpace(cfg.Host)
 	if host == "" {
-		host = "0.0.0.0"
+		host = "127.0.0.1"
 	}
 	port := cfg.Port
 	if port <= 0 {

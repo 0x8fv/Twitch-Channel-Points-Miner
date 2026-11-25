@@ -65,7 +65,7 @@ type config struct {
 func defaultConfig() map[string]interface{} {
 	return map[string]interface{}{
 		"username":                      "your-twitch-username",
-		"password":                      "your-twitch-password (Optional)",
+		"password":                      "",
 		"auto_update":                   true,
 		"debug":                         false,
 		"debug_deep":                    false,
@@ -109,15 +109,15 @@ func defaultConfig() map[string]interface{} {
 		},
 		"streamer_overrides": map[string]interface{}{},
 		"bet": map[string]interface{}{
-			"strategy":              nil,
-			"percentage":            nil,
-			"percentage_gap":        nil,
-			"max_points":            nil,
-			"stealth_mode":          nil,
+			"strategy":              "SMART",
+			"percentage":            5,
+			"percentage_gap":        20,
+			"max_points":            50000,
+			"stealth_mode":          false,
 			"deduct_stake_on_place": true,
-			"delay_mode":            nil,
-			"delay":                 nil,
-			"minimum_points":        nil,
+			"delay_mode":            "FROM_END",
+			"delay":                 6,
+			"minimum_points":        0,
 			"filter_condition": map[string]interface{}{
 				"by":    nil,
 				"where": nil,

@@ -106,7 +106,7 @@ When running a prebuilt binary, the miner uses `./config.json` if it exists in t
 ## Analytics dashboard
 A small built-in web dashboard (no external assets) shows every streamer's balance, session gain and online state, plus a points-over-time chart (24h / 7d / 30d / all). Watch streaks, bonus claims, raids, bet results, drop and moment claims, and online/offline changes are counted in an event lane under the chart and listed in an activity log. Hovering the chart shows the balance, how it moved from the previous point, and a sentence for each event in that time slot. The page refreshes every 45 seconds.
 
-- Enabled by default: `"analytics": { "enabled": true, "host": "0.0.0.0", "port": 5000 }` in `config.json`. Open `http://localhost:5000`. Set `enabled` to `false` to turn it off, or `host` to `127.0.0.1` to keep it local.
+- Enabled by default: `"analytics": { "enabled": true, "host": "127.0.0.1", "port": 5000 }` in `config.json`. Open `http://localhost:5000`. Set `enabled` to `false` to turn it off, or `host` to `0.0.0.0` to reach it from other machines on your network. The Docker image listens on `0.0.0.0` already.
 - `TCPM_ANALYTICS_ADDR` (e.g. `127.0.0.1:8080`) overrides `host`/`port`.
 - Data is stored as append-only JSONL files in `analytics/` inside the data directory (`<streamer>.points.jsonl`, `<streamer>.events.jsonl`); delete a file to reset a streamer's history.
 - The dashboard has no login and always shows real streamer names, even with `privacy.anonymize_logs`. Do not expose the port to the internet.

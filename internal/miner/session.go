@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -57,55 +56,11 @@ func (m *Miner) run(streamers []string, useFollowers bool, order domain.Follower
 	}
 	targets = filteredTargets
 
-	streamerObjs := make([]*domain.Streamer, 0, len(targets))
 	loadStartedAt := time.Now()
 	m.logger.EmojiPrintf(":hourglass_flowing_sand:", "Loading data for %d streamer(s). Please wait...", len(targets))
-	for _, name := range targets {
-		if name == "" {
-			continue
-		}
-		settings := m.StreamerSettings
-		if override, ok := m.StreamerOverrides[strings.ToLower(name)]; ok {
-			settings = override
-		}
-		s := &domain.Streamer{
-			Username:    name,
-			Settings:    settings,
-			Stream:      domain.NewStream(),
-			StreamerURL: fmt.Sprintf("%s/%s", twitchapi.URL, name),
-		}
-		id, err := m.twitch.GetChannelID(name)
-		if err != nil {
-			// if channel id can't be gotten from twitch, try checking warm start cache
-			// in case streamer has changed names recently
-			id = ""
-			if m.warmStartCache != nil {
-				entry, ok := m.warmStartCache.Get(name)
-				if ok {
-					id = strings.TrimSpace(entry.ChannelID)
-				}
-			}
-			if id == "" {
-				m.logger.Printf("skip %s: %v", m.rawStreamerName(name), err)
-				continue
-			}
-		}
-		s.ChannelID = id
-		prev := s.ChannelPoints
-		if _, err := m.loadChannelPointsContextWithIdentityRepair(s); err != nil {
-			m.logger.Printf("context for %s: %v", m.rawStreamerName(name), err)
-		} else {
-			m.handlePointsUpdate(s, prev, "")
-		}
-		m.updatePresence(s)
-		streamerObjs = append(streamerObjs, s)
-		m.initialPoints[streamerInitialPointsKey(s)] = s.ChannelPoints
-	}
+	streamerObjs := m.loadStreamers(targets)
 	m.saveWarmStartCacheSnapshot(streamerObjs)
-
-	if len(streamerObjs) > 0 {
-		m.logger.EmojiPrintf(":white_check_mark:", "%d Streamer loaded! (%s)", len(streamerObjs), formatLoadDuration(time.Since(loadStartedAt)))
-	}
+	m.logLoadSummary(streamerObjs, time.Since(loadStartedAt))
 
 	claimDropsEnabled := m.shouldClaimDrops(streamerObjs)
 	dropClaimer := drops.NewClaimer(m.twitch, m.logger, m.showDropsProgress)
@@ -137,16 +92,15 @@ func (m *Miner) contextRefresher(streamers []*domain.Streamer, stop <-chan struc
 	for {
 		select {
 		case <-ticker.C:
-			for _, s := range streamers {
+			forEachIndex(len(streamers), streamerConcurrency, func(i int) {
+				s := streamers[i]
 				prev := s.ChannelPoints
 				if _, err := m.loadChannelPointsContextWithIdentityRepair(s); err != nil {
 					m.logger.Printf("refresh %s: %v", m.styledStreamerName(s), err)
 				} else {
 					m.handlePointsUpdate(s, prev, "")
-					// TODO: Fix Available Campaigns
-					// m.refreshCampaigns(s)
 				}
-			}
+			})
 		case <-stop:
 			return
 		}

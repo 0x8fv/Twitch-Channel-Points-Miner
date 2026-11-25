@@ -45,6 +45,23 @@ func (m *Miner) logOffline(streamer *domain.Streamer) {
 	m.logger.EmojiEventf(":sleeping:", events.EventStreamerOffline, "%s (%s%s%s points) is %sOffline%s!%s", name, colorCyan, points, colorReset, colorRed, colorReset, extrainfoSuffix)
 }
 
+// announcesPresence is false while the streamer list is first loaded: the load
+// summary reports everyone in one line instead.
+func (m *Miner) announcesPresence() bool {
+	return !m.startingUp.Load()
+}
+
+func (m *Miner) announcePresence(streamer *domain.Streamer, online bool) {
+	if !m.announcesPresence() {
+		return
+	}
+	if online {
+		m.logOnline(streamer)
+	} else {
+		m.logOffline(streamer)
+	}
+}
+
 func (m *Miner) handlePubSubPresence(streamer *domain.Streamer, online bool, reason string) {
 	m.setPresence(streamer, online, fmt.Sprintf("pubsub:%s", reason))
 }
@@ -74,21 +91,8 @@ func (m *Miner) setPresence(streamer *domain.Streamer, online bool, reason strin
 	if online && m.showGameInfo {
 		m.resolveGameName(streamer)
 	}
-	if !prevKnown {
-		if online {
-			m.logOnline(streamer)
-		} else {
-			m.logOffline(streamer)
-		}
-		m.syncWarmStartCacheFromStreamer(streamer)
-		return
-	}
-	if prevOnline != online {
-		if online {
-			m.logOnline(streamer)
-		} else {
-			m.logOffline(streamer)
-		}
+	if !prevKnown || prevOnline != online {
+		m.announcePresence(streamer, online)
 		m.syncWarmStartCacheFromStreamer(streamer)
 		return
 	}

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"TwitchChannelPointsMiner/internal/ansi"
@@ -73,6 +74,8 @@ type Miner struct {
 	twitch                     *twitch.Client
 	streamers                  []*domain.Streamer
 	initialPoints              map[string]int
+	initialPointsMu            sync.Mutex
+	startingUp                 atomic.Bool
 	stop                       chan struct{}
 	watchPriorities            []watchPriority
 	streamerExclusions         map[string]struct{}

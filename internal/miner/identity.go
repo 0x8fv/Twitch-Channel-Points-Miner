@@ -50,9 +50,11 @@ func (m *Miner) applyStreamerLoginChange(streamer *domain.Streamer, login string
 	if m != nil && m.initialPoints != nil && oldLogin != "" {
 		stableKey := streamerInitialPointsKey(streamer)
 		if stableKey != "" {
+			m.initialPointsMu.Lock()
 			if initial, ok := m.initialPoints[oldLogin]; ok {
 				m.initialPoints[stableKey] = initial
 			}
+			m.initialPointsMu.Unlock()
 		}
 	}
 	if m != nil {
