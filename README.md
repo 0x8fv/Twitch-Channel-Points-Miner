@@ -104,7 +104,7 @@ When running a prebuilt binary, the miner uses `./config.json` if it exists in t
   - `filter_condition`: Optional object to skip betting unless a live metric meets your rule. Example: `{ "by": "TOTAL_USERS", "where": "GTE", "value": 50 }` to skip bets until at least 50 users participate. `by` supports `PERCENTAGE_USERS`, `ODDS`, `ODDS_PERCENTAGE`, `TOP_POINTS`, `TOTAL_USERS`, `TOTAL_POINTS`; `where` supports `GT`, `LT`, `GTE`, `LTE`.
 
 ## Analytics dashboard
-A small built-in web dashboard (no external assets) shows every streamer's balance, session gain and online state, plus a points-over-time chart (24h / 7d / 30d / all) with markers for watch streaks, bonus claims, raids, bet results, drop and moment claims, and online/offline changes. Hovering the chart shows the balance, how it moved from the previous point, and a sentence for each event stacked on that spot.
+A small built-in web dashboard (no external assets) shows every streamer's balance, session gain and online state, plus a points-over-time chart (24h / 7d / 30d / all). Watch streaks, bonus claims, raids, bet results, drop and moment claims, and online/offline changes are counted in an event lane under the chart and listed in an activity log. Hovering the chart shows the balance, how it moved from the previous point, and a sentence for each event in that time slot. The page refreshes every 45 seconds.
 
 - Enabled by default: `"analytics": { "enabled": true, "host": "0.0.0.0", "port": 5000 }` in `config.json`. Open `http://localhost:5000`. Set `enabled` to `false` to turn it off, or `host` to `127.0.0.1` to keep it local.
 - `TCPM_ANALYTICS_ADDR` (e.g. `127.0.0.1:8080`) overrides `host`/`port`.
