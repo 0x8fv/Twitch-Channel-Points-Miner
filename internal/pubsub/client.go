@@ -26,10 +26,12 @@ type Logger interface {
 var ErrReconnectRequested = errors.New("pubsub reconnect requested")
 
 type Client struct {
-	twitch      *twitch.Client
-	logger      Logger
-	anonymizer  *privacy.Anonymizer
-	disableSSL  bool
+	twitch     *twitch.Client
+	logger     Logger
+	anonymizer *privacy.Anonymizer
+	disableSSL bool
+	// endpoint overrides the PubSub address; empty means Twitch.
+	endpoint    string
 	streamers   []*domain.Streamer
 	streamerMap map[string]*domain.Streamer
 	predictions map[string]*prediction.Event

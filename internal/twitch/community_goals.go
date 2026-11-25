@@ -93,22 +93,6 @@ func (t *Client) ContributeToCommunityGoal(streamer *domain.Streamer, goalID, ti
 	return nil
 }
 
-func parseCommunityGoals(goals interface{}) map[string]*domain.CommunityGoal {
-	arr, ok := goals.([]interface{})
-	if !ok {
-		return nil
-	}
-	result := make(map[string]*domain.CommunityGoal, len(arr))
-	for _, raw := range arr {
-		if goalMap, ok := raw.(map[string]interface{}); ok {
-			if goal := domain.NewCommunityGoalFromGQL(goalMap); goal != nil && goal.ID != "" {
-				result[goal.ID] = goal
-			}
-		}
-	}
-	return result
-}
-
 func minInt(values ...int) int {
 	if len(values) == 0 {
 		return 0

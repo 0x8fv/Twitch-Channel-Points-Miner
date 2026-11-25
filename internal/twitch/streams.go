@@ -235,13 +235,3 @@ func (t *Client) UpdateStream(streamer *domain.Streamer) error {
 	}
 	return nil
 }
-
-func convertTags(tags []interface{}) []map[string]interface{} {
-	result := make([]map[string]interface{}, 0, len(tags))
-	for _, tag := range tags {
-		if m, ok := tag.(map[string]interface{}); ok {
-			result = append(result, m)
-		}
-	}
-	return result
-}

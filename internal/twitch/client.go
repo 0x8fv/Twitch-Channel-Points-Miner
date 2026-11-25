@@ -60,6 +60,8 @@ type Client struct {
 	logger         debugLogger
 	anonymizer     *privacy.Anonymizer
 	onGameChange   func(streamer *domain.Streamer, previous, current string)
+	// sleep replaces time.Sleep when set, so waits can be skipped under test.
+	sleep func(time.Duration)
 }
 
 func NewClient(username, userAgent, password string, logger debugLogger, anonymizer *privacy.Anonymizer) (*Client, error) {
@@ -202,4 +204,13 @@ func (t *Client) UserID() string {
 // LoginName is the login the session was opened with.
 func (t *Client) LoginName() string {
 	return t.username
+}
+
+// pause waits for d between the steps of a slow exchange with Twitch.
+func (t *Client) pause(d time.Duration) {
+	if t.sleep != nil {
+		t.sleep(d)
+		return
+	}
+	time.Sleep(d)
 }
