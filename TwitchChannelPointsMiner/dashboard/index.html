@@ -4,140 +4,188 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Channel Points Miner</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M2 13h4V9h4V5h4' fill='none' stroke='%239146ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<script>
+// Theme is set before first paint so the page never flashes the wrong one.
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('tcpm.theme'); } catch (e) {}
+  document.documentElement.dataset.theme = t || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+})();
+</script>
 <style>
 :root {
   color-scheme: light;
-  --page: #fbfbfa; --ink: #111113; --ink2: #5c5c66; --muted: #9a9aa3;
-  --grid: #ececea; --wash: rgba(17,17,19,.055); --tip: #ffffff; --border: rgba(17,17,19,.10);
-  --line: #6250d6; --up: #0a7a2f; --down: #c23030; --neu: #8a6a12; --online: #0ca30c;
+  --side: #f4f4f5; --page: #fafafa; --card: #ffffff; --raised: #e7e7e9; --hover: rgba(23,23,23,.045);
+  --ink: #171717; --ink2: #525252; --muted: #6b6b6b;
+  --hair: rgba(23,23,23,.09); --grid: rgba(23,23,23,.07);
+  --line: #772ce8; --wash: rgba(119,44,232,.06);
+  --up: #15803d; --down: #dc2626; --neu: #8a6a12; --online: #16a34a;
+  --float: 0 8px 24px rgba(0,0,0,.08);
+  --sans: system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Consolas, "Liberation Mono", monospace;
+  --ease: cubic-bezier(.22, 1, .36, 1);
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --page: #0e0e10; --ink: #f1f1f3; --ink2: #a3a3ad; --muted: #6b6b75;
-  --grid: #1e1e22; --wash: rgba(255,255,255,.065); --tip: #1a1a1e; --border: rgba(255,255,255,.10);
-  --line: #9085e9; --up: #2fbf5b; --down: #f06a6a; --neu: #e0b15a; --online: #2fbf5b;
+  --side: #0f0f10; --page: #141415; --card: #19191b; --raised: #232325; --hover: rgba(237,237,237,.05);
+  --ink: #ededed; --ink2: #a1a1a6; --muted: #85858b;
+  --hair: rgba(237,237,237,.08); --grid: rgba(237,237,237,.06);
+  --line: #a970ff; --wash: rgba(169,112,255,.07);
+  --up: #4cc38a; --down: #e5484d; --neu: #e0b15a; --online: #4cc38a;
+  --float: 0 8px 24px rgba(0,0,0,.4);
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
-body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
-button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
-button:focus-visible, a:focus-visible { outline: 2px solid var(--line); outline-offset: 2px; border-radius: 4px; }
-.num { font-variant-numeric: tabular-nums; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/20px var(--sans); -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; transition: background-color .14s var(--ease), color .14s var(--ease); }
+:focus-visible { outline: 2px solid var(--line); outline-offset: 2px; }
+h1, h2, dl, dd, ul { margin: 0; padding: 0; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .up { color: var(--up); } .down { color: var(--down); }
+.lbl { font-size: 12px; line-height: 16px; color: var(--muted); }
 
-.app { display: grid; grid-template-rows: auto 1fr; height: 100%; max-width: 1280px; margin: 0 auto; padding: 28px 32px 24px; gap: 28px; }
-header { display: flex; align-items: baseline; gap: 20px; color: var(--ink2); font-size: 13px; }
-h1 { font-size: 13px; font-weight: 600; margin: 0; color: var(--ink); }
-#summary { margin-right: auto; }
-#summary b { color: var(--ink); font-weight: 600; }
-.quiet { color: var(--muted); }
-.quiet:hover { color: var(--ink); }
+.app { display: grid; grid-template-columns: 264px minmax(0, 1fr); height: 100dvh; }
 
-main { display: grid; grid-template-columns: 250px 1fr; gap: 48px; min-height: 0; }
-.side { display: flex; flex-direction: column; min-height: 0; }
-.sorts { display: flex; gap: 12px; padding: 0 10px 10px; font-size: 12px; }
-.sorts button { color: var(--muted); }
-.sorts button:hover { color: var(--ink2); }
-.sorts button[aria-pressed="true"] { color: var(--ink); font-weight: 600; }
-#list { list-style: none; margin: 0 -2px 0 0; padding: 0 2px 0 0; overflow-y: auto; flex: 1; scrollbar-width: thin; }
-#list button { display: grid; grid-template-columns: 8px 1fr auto; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 7px 10px; border-radius: 8px; color: var(--ink2); }
-#list button:hover { background: var(--wash); }
-#list button.on { color: var(--ink); }
-#list button[aria-current="true"] { background: var(--wash); color: var(--ink); font-weight: 600; }
-.dot { width: 7px; height: 7px; border-radius: 50%; background: transparent; }
-.on > .dot, .dot.on { background: var(--online); }
-#d-dot:not(.on) { display: none; }
+/* ---------- sidebar ---------- */
+.side { display: flex; flex-direction: column; min-height: 0; background: var(--side); border-right: 1px solid var(--hair); }
+.brand { display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 16px; flex: none; }
+.brand svg { color: var(--line); flex: none; }
+.brand h1 { font-size: 14px; font-weight: 500; }
+.totals { padding: 8px 16px 20px; }
+.totals .fig { margin-top: 4px; font-size: 24px; line-height: 32px; font-weight: 500; }
+.totals dl { margin-top: 12px; }
+.totals dl div { display: flex; justify-content: space-between; height: 20px; font-size: 12px; }
+.totals dt { color: var(--muted); }
+.filter { position: relative; margin: 0 12px; }
+.filter input { width: 100%; height: 32px; padding: 0 32px 0 12px; border: 1px solid var(--hair); border-radius: 8px; background: var(--card); color: inherit; font: inherit; font-size: 13px; }
+.filter input::placeholder { color: var(--muted); }
+.filter input::-webkit-search-cancel-button { display: none; }
+.filter kbd { position: absolute; right: 8px; top: 8px; width: 16px; height: 16px; border: 1px solid var(--hair); border-radius: 4px; color: var(--muted); font: 11px/14px var(--mono); text-align: center; pointer-events: none; }
+.filter input:focus + kbd, .filter input:not(:placeholder-shown) + kbd { display: none; }
+.sorts { display: flex; gap: 4px; padding: 12px 12px 8px; }
+.sorts button { height: 24px; padding: 0 8px; border-radius: 6px; font-size: 12px; color: var(--muted); }
+.sorts button:hover { color: var(--ink); }
+.sorts button[aria-pressed="true"] { background: var(--raised); color: var(--ink); }
+#list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px 8px; list-style: none; scrollbar-width: thin; }
+#list li + li { margin-top: 2px; }
+#list button { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 8px; border-radius: 8px; text-align: left; font-size: 13px; color: var(--muted); }
+#list button.on { color: var(--ink2); }
+#list button:hover { background: var(--hover); color: var(--ink); }
+#list button[aria-current="true"] { background: var(--raised); color: var(--ink); }
+#list .val { font-size: 12px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--muted); opacity: .5; }
+.on > .dot, .dot.on { background: var(--online); border-color: var(--online); opacity: 1; }
 .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.val { font-weight: 400; }
+.empty { padding: 8px; font-size: 13px; color: var(--muted); }
+.foot { display: flex; align-items: center; justify-content: space-between; flex: none; height: 40px; padding: 0 16px; border-top: 1px solid var(--hair); font-size: 12px; color: var(--muted); }
+.foot button:hover { color: var(--ink); }
 
-.detail { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.top { display: flex; align-items: flex-start; gap: 16px; }
-.who { margin-right: auto; min-width: 0; }
-.who a { display: inline-flex; align-items: center; gap: 8px; color: var(--ink2); text-decoration: none; font-size: 14px; }
-.who a:hover { color: var(--ink); }
-#d-points { font-size: 44px; line-height: 1.15; font-weight: 600; letter-spacing: -.025em; margin: 2px 0; }
-#d-delta { font-size: 14px; color: var(--ink2); min-height: 20px; }
-#d-delta b { font-weight: 600; }
-.ranges { display: flex; gap: 2px; }
-.ranges button { padding: 4px 10px; border-radius: 7px; color: var(--muted); font-size: 13px; }
+/* ---------- detail ---------- */
+.main { min-width: 0; overflow-y: auto; }
+.wrap { max-width: 1440px; margin: 0 auto; padding: 0 32px 48px; }
+.bar { display: flex; align-items: center; gap: 12px; min-height: 56px; }
+.bar a { color: var(--ink); text-decoration: none; font-weight: 500; }
+.bar a[href]:hover { text-decoration: underline; text-underline-offset: 3px; }
+#d-state { display: inline-flex; align-items: center; gap: 8px; margin-right: auto; font-size: 13px; color: var(--muted); }
+.ranges { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--hair); border-radius: 8px; }
+.ranges button { height: 24px; padding: 0 12px; border-radius: 6px; font-size: 12px; color: var(--muted); }
 .ranges button:hover { color: var(--ink); }
-.ranges button[aria-pressed="true"] { background: var(--wash); color: var(--ink); font-weight: 600; }
-.plot { position: relative; flex: 1; min-height: 260px; margin-top: 20px; transition: opacity .15s; }
-.plot.loading { opacity: .5; }
+.ranges button[aria-pressed="true"] { background: var(--raised); color: var(--ink); }
+.hero { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 24px 32px; padding: 16px 0 24px; }
+#d-points { font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -.02em; }
+#d-delta { min-height: 20px; margin-top: 8px; font-size: 13px; color: var(--ink2); }
+.stats { display: flex; margin-left: auto; }
+.stats div { padding: 0 24px; border-left: 1px solid var(--hair); }
+.stats div:last-child { padding-right: 0; }
+.stats dd { margin-top: 4px; font-size: 16px; line-height: 24px; font-weight: 500; }
+.card { padding: 20px 20px 16px; background: var(--card); border: 1px solid var(--hair); border-radius: 12px; }
+.plot { position: relative; height: 340px; transition: opacity .16s var(--ease); }
+.plot.loading { opacity: .45; }
 canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-#tip { position: absolute; pointer-events: none; z-index: 2; display: none; max-width: 340px; background: var(--tip); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; box-shadow: 0 6px 24px rgba(0,0,0,.16); font-size: 12px; }
-#tip .v { font-size: 15px; font-weight: 600; }
-#tip .d { font-weight: 600; }
-#tip .t { color: var(--ink2); }
-#tip .e { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--border); }
-#tip .e b { display: flex; align-items: center; gap: 6px; font-weight: 600; }
-#tip .e.pos b { color: var(--up); }
-#tip .e.neg b { color: var(--down); }
-#tip .e.neu b { color: var(--neu); }
-#tip .m { color: var(--ink2); margin-top: 2px; line-height: 1.4; overflow-wrap: anywhere; }
-#tip .more { color: var(--muted); margin-top: 6px; }
-.g { font-size: 14px; line-height: 1; width: 1.2em; text-align: center; flex: none; }
-.legend { display: flex; flex-direction: column; gap: 8px; min-height: 22px; margin-top: 12px; }
-.lg { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.lg .k { flex: none; width: 78px; font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
-.lg.pos .k { color: var(--up); }
-.lg.neg .k { color: var(--down); }
-.lg.neu .k { color: var(--neu); }
-.legend button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px 3px 8px; color: var(--ink); font-size: 12px; background: var(--wash); }
-.legend button:hover { border-color: var(--ink2); }
-.legend button.pos { box-shadow: inset 3px 0 0 var(--up); }
-.legend button.neg { box-shadow: inset 3px 0 0 var(--down); }
-.legend button.neu { box-shadow: inset 3px 0 0 var(--neu); }
-.legend em { font-style: normal; color: var(--muted); }
-.legend button[aria-pressed="false"] { opacity: .38; }
-.feed { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; max-height: 196px; overflow: auto; scrollbar-width: thin; }
-.feed[hidden] { display: none; }
-.feed li { display: grid; grid-template-columns: 1.3em 112px minmax(0, 1fr) auto; gap: 8px; align-items: baseline; padding: 4px 2px; font-size: 12px; border-radius: 6px; }
-.feed .lbl { font-weight: 600; }
-.feed .lbl.pos { color: var(--up); }
-.feed .lbl.neg { color: var(--down); }
-.feed .lbl.neu { color: var(--neu); }
-.feed .msg { color: var(--ink2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.feed time { color: var(--muted); }
-.empty { color: var(--muted); padding: 10px; }
+#ov { touch-action: pan-y; }
+#tip { position: absolute; left: 0; top: 0; z-index: 2; max-width: 336px; padding: 8px 12px; background: var(--card); border: 1px solid var(--hair); border-radius: 8px; box-shadow: var(--float); font-size: 12px; line-height: 16px; pointer-events: none; will-change: transform; }
+#tip .v { font-size: 14px; line-height: 20px; font-weight: 500; }
+#tip .t, #tip .more { color: var(--muted); }
+#tip .more { margin-top: 8px; }
+#tip .e { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--hair); }
+#tip .m { margin-top: 4px; color: var(--ink2); overflow-wrap: anywhere; }
+.tag { display: inline-flex; align-items: center; gap: 8px; }
+.tag svg { flex: none; }
+.legend { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--hair); font-size: 12px; line-height: 16px; }
+.legend:empty { display: none; }
+.lg { display: flex; flex-wrap: wrap; align-items: center; gap: 0 16px; }
+.lg .k { flex: none; width: 64px; }
+.legend button { display: inline-flex; align-items: center; gap: 8px; height: 24px; color: var(--ink2); }
+.legend button:hover { color: var(--ink); }
+.legend button[aria-pressed="false"] { opacity: .4; text-decoration: line-through; }
+.legend .num { color: var(--muted); }
+
+/* ---------- activity ---------- */
+.loghead { display: flex; align-items: baseline; justify-content: space-between; margin-top: 32px; }
+.loghead h2 { font-size: 14px; font-weight: 500; }
+#log { list-style: none; }
+#log .day { padding: 16px 0 8px; font-size: 12px; line-height: 16px; color: var(--muted); }
+#log .ev { display: grid; grid-template-columns: 72px 136px minmax(0, 1fr); align-items: start; gap: 16px; padding: 8px 0; border-top: 1px solid var(--hair); font-size: 13px; }
+#log time { font-size: 12px; color: var(--muted); white-space: nowrap; }
+#log .m { color: var(--ink2); overflow-wrap: anywhere; }
+#more { height: 32px; margin-top: 12px; padding: 0 12px; border: 1px solid var(--hair); border-radius: 8px; font-size: 13px; color: var(--ink2); }
+#more:hover { background: var(--hover); color: var(--ink); }
+
 @media (max-width: 820px) {
   html, body { height: auto; }
-  .app { height: auto; padding: 20px 16px; gap: 20px; }
-  header { flex-wrap: wrap; gap: 4px 16px; }
-  main { grid-template-columns: 1fr; gap: 24px; }
-  .detail { order: -1; }
-  #d-points { font-size: 34px; }
-  .plot { flex: none; height: 280px; }
-  #list { max-height: none; }
-  .feed li { grid-template-columns: 1.3em minmax(0, 1fr) auto; }
-  .feed .msg { grid-column: 2 / -1; white-space: normal; }
+  .app { display: flex; flex-direction: column; height: auto; }
+  .main { order: -1; overflow: visible; }
+  .wrap { padding: 0 16px 32px; }
+  .side { border-right: 0; border-top: 1px solid var(--hair); }
+  #list { overflow: visible; }
+  #d-points { font-size: 32px; line-height: 36px; }
+  .stats { margin-left: 0; width: 100%; }
+  .stats div { flex: 1; padding: 0 12px; }
+  .stats div:first-child { padding-left: 0; border-left: 0; }
+  .card { padding: 16px 12px 12px; }
+  .plot { height: 280px; }
+  #log .ev { grid-template-columns: 72px minmax(0, 1fr); gap: 4px 12px; }
+  #log .m { grid-column: 2; }
 }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
 <body>
 <div class="app">
-  <header>
-    <h1>Channel Points Miner</h1>
-    <span id="summary"></span>
-    <span id="status" class="quiet" role="status"></span>
-    <button class="quiet" id="theme" type="button">Dark</button>
-  </header>
-  <main>
-    <section class="side" aria-label="Streamers">
-      <div class="sorts" role="group" aria-label="Sort streamers">
-        <button type="button" data-sort="points">Points</button>
-        <button type="button" data-sort="gain">Session gain</button>
-        <button type="button" data-sort="name">Name</button>
-      </div>
-      <ul id="list"><li class="empty">Loading…</li></ul>
-    </section>
-    <section class="detail" aria-label="Points over time">
-      <div class="top">
-        <div class="who">
-          <a id="d-name" target="_blank" rel="noopener"><span class="dot" id="d-dot"></span><span id="d-label">–</span></a>
-          <div id="d-points" class="num">–</div>
-          <div id="d-delta"></div>
-        </div>
+  <aside class="side" aria-label="Streamers">
+    <div class="brand">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 13h4V9h4V5h4"/></svg>
+      <h1>Channel Points Miner</h1>
+    </div>
+    <div class="totals">
+      <div class="lbl">Total balance</div>
+      <div class="fig num" id="t-points">–</div>
+      <dl>
+        <div><dt>This session</dt><dd class="num" id="t-gain">–</dd></div>
+        <div><dt>Online</dt><dd class="num" id="t-online">–</dd></div>
+      </dl>
+    </div>
+    <div class="filter">
+      <input id="q" type="search" placeholder="Filter" aria-label="Filter streamers" autocomplete="off" spellcheck="false">
+      <kbd aria-hidden="true">/</kbd>
+    </div>
+    <div class="sorts" role="group" aria-label="Sort streamers">
+      <button type="button" data-sort="points">Balance</button>
+      <button type="button" data-sort="gain">Session</button>
+      <button type="button" data-sort="name">Name</button>
+    </div>
+    <ul id="list"><li class="empty">Loading</li></ul>
+    <div class="foot">
+      <span id="status" class="num" role="status"></span>
+      <button id="theme" type="button"></button>
+    </div>
+  </aside>
+  <main class="main">
+    <div class="wrap">
+      <div class="bar">
+        <a id="d-name" target="_blank" rel="noopener">–</a>
+        <span id="d-state"></span>
         <div class="ranges" role="group" aria-label="Date range">
           <button type="button" data-range="24h">24h</button>
           <button type="button" data-range="7d">7d</button>
@@ -145,60 +193,124 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
           <button type="button" data-range="all">All</button>
         </div>
       </div>
-      <div class="plot" id="plot"><canvas id="cv" role="img" aria-label="Channel points over time"></canvas><div id="tip" role="tooltip"></div></div>
-      <div class="legend" id="legend" aria-label="Event markers (click to show or hide)"></div>
-      <ul class="feed" id="feed" hidden aria-label="Recent events"></ul>
-    </section>
+      <div class="hero">
+        <div>
+          <div class="lbl">Balance</div>
+          <div id="d-points" class="num">–</div>
+          <div id="d-delta"></div>
+        </div>
+        <dl class="stats">
+          <div><dt class="lbl" id="s-low-l">Low</dt><dd class="num" id="s-low">–</dd></div>
+          <div><dt class="lbl" id="s-high-l">High</dt><dd class="num" id="s-high">–</dd></div>
+          <div><dt class="lbl">This session</dt><dd class="num" id="s-session">–</dd></div>
+        </dl>
+      </div>
+      <section class="card" aria-label="Balance over time">
+        <div class="plot" id="plot">
+          <canvas id="cv" role="img" aria-label="Channel points over time"></canvas>
+          <canvas id="ov" aria-hidden="true"></canvas>
+          <div id="tip" role="tooltip" hidden></div>
+        </div>
+        <div class="legend" id="legend" aria-label="Event types, click to show or hide"></div>
+      </section>
+      <section aria-labelledby="log-h">
+        <div class="loghead"><h2 id="log-h">Activity</h2><span class="lbl num" id="log-n"></span></div>
+        <ul id="log"></ul>
+        <button id="more" type="button" hidden></button>
+      </section>
+    </div>
   </main>
 </div>
 <script>
 'use strict';
-const REFRESH_MS = 30000;
-// Glyphs match constants.EventGlyph. tone is the polarity: pos, neg, neu.
+const REFRESH_MS = 45000, PREFETCH_MAX_AGE = 15000, LOG_PAGE = 100;
+// Marker glyphs in unit coordinates; the same path draws on the canvas and in the legend.
+const GLYPH = {
+  dot:     { d: 'M1,0A1,1 0 1,1 -1,0A1,1 0 1,1 1,0Z' },
+  square:  { d: 'M-.9,-.9H.9V.9H-.9Z' },
+  up:      { d: 'M0,-1.2L1.1,.8L-1.1,.8Z' },
+  down:    { d: 'M0,1.2L1.1,-.8L-1.1,-.8Z' },
+  diamond: { d: 'M0,-1.25L1.25,0L0,1.25L-1.25,0Z' },
+  hollow:  { d: 'M0,-1.25L1.25,0L0,1.25L-1.25,0Z', line: true, open: true },
+  ring:    { d: 'M1,0A1,1 0 1,1 -1,0A1,1 0 1,1 1,0Z', line: true, open: true },
+  cross:   { d: 'M-1,-1L1,1M1,-1L-1,1', line: true },
+  bar:     { d: 'M-1.2,0H1.2', line: true },
+};
+// tone is the polarity from constants.EventPolarity: pos, neg, neu. A marker's shape
+// names the event and its colour names the polarity; the accent stays with the line.
 const EV = {
-  WATCH_STREAK:     { label: 'Watch streak', emoji: '⏫', tone: 'pos' },
-  CLAIM:            { label: 'Bonus claim',  emoji: '✅', tone: 'pos' },
-  RAID:             { label: 'Raid',         emoji: '📡', tone: 'pos' },
-  BET_WIN:          { label: 'Bet won',      emoji: '📈', tone: 'pos' },
-  BET_LOSE:         { label: 'Bet lost',     emoji: '📉', tone: 'neg' },
-  BET_REFUND:       { label: 'Bet refund',   emoji: '↩️', tone: 'neu' },
-  DROP_CLAIM:       { label: 'Drop claim',   emoji: '📦', tone: 'pos' },
-  MOMENT_CLAIM:     { label: 'Moment claim', emoji: '⚡', tone: 'pos' },
-  STREAMER_ONLINE:  { label: 'Went online',  emoji: '🟢', tone: 'pos' },
-  STREAMER_OFFLINE: { label: 'Went offline', emoji: '🔴', tone: 'neg' },
+  WATCH_STREAK:     { label: 'Watch streak', glyph: 'dot',     tone: 'pos' },
+  CLAIM:            { label: 'Bonus claim',  glyph: 'dot',     tone: 'pos', scale: .7 },
+  RAID:             { label: 'Raid',         glyph: 'square',  tone: 'pos' },
+  BET_WIN:          { label: 'Bet won',      glyph: 'up',      tone: 'pos' },
+  BET_LOSE:         { label: 'Bet lost',     glyph: 'down',    tone: 'neg' },
+  BET_REFUND:       { label: 'Bet refund',   glyph: 'bar',     tone: 'neu' },
+  DROP_CLAIM:       { label: 'Drop claim',   glyph: 'diamond', tone: 'pos' },
+  MOMENT_CLAIM:     { label: 'Moment claim', glyph: 'hollow',  tone: 'pos' },
+  STREAMER_ONLINE:  { label: 'Went online',  glyph: 'ring',    tone: 'pos' },
+  STREAMER_OFFLINE: { label: 'Went offline', glyph: 'cross',   tone: 'neg' },
 };
 const TONE_LABEL = { pos: 'Positive', neg: 'Negative', neu: 'Neutral' };
-const TONE_VAR = { pos: '--up', neg: '--down', neu: '--neu' };
-const RANGE_LABEL = { '24h': 'in the last 24 hours', '7d': 'in the last 7 days', '30d': 'in the last 30 days', all: 'all time' };
+const TONE_COLOR = { pos: 'up', neg: 'down', neu: 'neu' };
+const RANGE_LONG = { '24h': 'in the last 24 hours', '7d': 'in the last 7 days', '30d': 'in the last 30 days', all: 'all time' };
+const RANGE_SHORT = { '24h': '24h', '7d': '7d', '30d': '30d', all: 'all time' };
 const $ = id => document.getElementById(id);
+const root = document.documentElement;
 const store = {
   get(k, d) { try { return localStorage.getItem('tcpm.' + k) ?? d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem('tcpm.' + k, v); } catch {} },
 };
+function safeHash() { try { return decodeURIComponent(location.hash.slice(1)); } catch { return ''; } }
+function safeSet(raw) { try { return new Set(JSON.parse(raw)); } catch { return new Set(); } }
 const state = {
-  streamers: [], sel: decodeURIComponent(location.hash.slice(1)) || null,
-  range: store.get('range', '24h'), sort: store.get('sort', 'points'),
-  hidden: new Set(JSON.parse(store.get('hidden', '[]'))),
-  data: null, marks: [], hover: null, seq: 0,
+  streamers: [], totals: null, sel: safeHash() || store.get('sel', '') || null,
+  range: store.get('range', '24h'), sort: store.get('sort', 'points'), q: '',
+  hidden: safeSet(store.get('hidden', '[]')),
+  data: null, marks: [], hover: null, logN: LOG_PAGE,
 };
+if (!RANGE_LONG[state.range]) state.range = '24h';
+if (!['points', 'gain', 'name'].includes(state.sort)) state.sort = 'points';
+
 const nf = new Intl.NumberFormat();
 const fmt = n => nf.format(n);
 const signed = n => (n > 0 ? '+' : n < 0 ? '−' : '') + fmt(Math.abs(n));
 const cls = n => (n > 0 ? 'up' : n < 0 ? 'down' : '');
+const dfDay = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+const dfLong = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+const dfTime = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
+const dfClock = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const dfTip = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 function el(tag, props, ...kids) {
   const e = Object.assign(document.createElement(tag), props || {});
   e.append(...kids);
   return e;
 }
+function text(node, s) { if (node.textContent !== s) node.textContent = s; }
+function tag(type) {
+  const k = EV[type], g = GLYPH[k.glyph], s = k.scale || 1;
+  const e = el('span', { className: 'tag' });
+  const paint = g.line ? 'fill="none" stroke="currentColor" stroke-width=".5" stroke-linecap="round"' : 'fill="currentColor"';
+  e.innerHTML = `<svg width="12" height="12" viewBox="-2 -2 4 4" aria-hidden="true" style="color:var(--${TONE_COLOR[k.tone]})"><path transform="scale(${s})" d="${g.d}" ${paint}/></svg>`;
+  e.append(k.label);
+  return e;
+}
 
 /* ---------- theme ---------- */
+let C = null;
+function colors() {
+  if (C) return C;
+  const cs = getComputedStyle(root);
+  C = { font: '11px ' + cs.getPropertyValue('--mono').trim() };
+  for (const k of ['card', 'ink', 'muted', 'grid', 'line', 'wash', 'up', 'down', 'neu']) C[k] = cs.getPropertyValue('--' + k).trim();
+  return C;
+}
 function setTheme(t) {
-  document.documentElement.dataset.theme = t;
-  $('theme').textContent = t === 'dark' ? 'Light' : 'Dark';
-  renderLegend(); draw();
+  root.dataset.theme = t; C = null;
+  $('theme').textContent = t === 'dark' ? 'Light theme' : 'Dark theme';
+  draw();
 }
 $('theme').onclick = () => {
-  const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  const t = root.dataset.theme === 'dark' ? 'light' : 'dark';
   store.set('theme', t); setTheme(t);
 };
 
@@ -208,132 +320,231 @@ async function getJSON(url) {
   if (!r.ok) throw new Error(r.status);
   return r.json();
 }
+// Responses are kept per streamer and range, so going back to a view paints at once
+// and the network only confirms it. Hovering a row or a range warms the entry.
+const cache = new Map();
+const key = (name, range) => name + '|' + range;
+function load(name, range, maxAge) {
+  const k = key(name, range), c = cache.get(k);
+  if (c?.p) return c.p;
+  if (c?.d && Date.now() - c.at < maxAge) return Promise.resolve(c.d);
+  const p = getJSON('api/streamer/' + encodeURIComponent(name) + '?range=' + range).then(d => {
+    cache.delete(k); cache.set(k, { d, at: Date.now() });
+    if (cache.size > 48) cache.delete(cache.keys().next().value);
+    return d;
+  }, e => {
+    c?.d ? cache.set(k, { d: c.d, at: c.at }) : cache.delete(k);
+    throw e;
+  });
+  cache.set(k, { d: c?.d, at: c?.at || 0, p });
+  return p;
+}
+const warm = (name, range) => { if (name) load(name, range, PREFETCH_MAX_AGE).catch(() => {}); };
 async function loadList() {
-  const d = await getJSON('api/streamers'), t = d.totals;
-  state.streamers = d.streamers;
-  const parts = [el('span', null, el('b', { className: 'num', textContent: fmt(t.points) }), ' points'),
-    el('span', null, el('b', { textContent: t.online }), ' of ' + t.count + ' online')];
-  if (t.session_gain) parts.push(el('span', null, el('b', { className: 'num ' + cls(t.session_gain), textContent: signed(t.session_gain) }), ' this session'));
-  $('summary').replaceChildren(...parts.flatMap((p, i) => i ? ['  ·  ', p] : [p]));
+  const d = await getJSON('api/streamers');
+  state.streamers = d.streamers; state.totals = d.totals;
   if (!state.sel || !d.streamers.some(s => s.name === state.sel)) state.sel = sorted()[0]?.name || null;
-  renderList(); renderHead();
+  renderSide(); renderHead();
 }
-async function loadDetail(keepFrame) {
-  if (!state.sel) { state.data = null; draw(); return; }
-  const seq = ++state.seq;
-  if (!keepFrame) $('plot').classList.add('loading');
+async function show(maxAge) {
+  const name = state.sel, range = state.range;
+  if (!name) { setData(null); return; }
+  const c = cache.get(key(name, range));
+  if (c?.d) setData(c.d); else { renderHead(); $('plot').classList.add('loading'); }
   try {
-    const d = await getJSON('api/streamer/' + encodeURIComponent(state.sel) + '?range=' + state.range);
-    if (seq !== state.seq) return;
-    state.data = d;
+    const d = await load(name, range, maxAge);
+    if (name === state.sel && range === state.range) setData(d);
   } finally {
-    if (seq === state.seq) $('plot').classList.remove('loading');
+    if (name === state.sel && range === state.range) $('plot').classList.remove('loading');
   }
-  renderHead(); renderLegend(); draw();
 }
-async function refresh(keepFrame) {
+function setData(d) {
+  if (state.data === d) return;
+  state.data = d;
+  renderHead(); renderLegend(); renderLog(); draw();
+}
+async function refresh() {
   try {
-    await loadList(); await loadDetail(keepFrame);
-    $('status').textContent = '';
-  } catch (e) {
-    $('status').textContent = 'Connection lost, retrying…';
+    // List and chart are fetched together; a stale selection is corrected by the list.
+    await Promise.all([loadList(), state.sel ? load(state.sel, state.range, 0).catch(() => {}) : null]);
+    await show(REFRESH_MS / 2);
+    text($('status'), 'Updated ' + dfClock.format(new Date()));
+  } catch {
+    text($('status'), 'Connection lost, retrying');
   }
 }
 
-/* ---------- list ---------- */
+/* ---------- sidebar ---------- */
 function sorted() {
   const by = { points: (a, b) => b.points - a.points, gain: (a, b) => b.session_gain - a.session_gain, name: () => 0 }[state.sort];
-  return [...state.streamers].sort((a, b) => by(a, b) || a.name.localeCompare(b.name));
+  const q = state.q;
+  return state.streamers.filter(s => !q || s.name.includes(q)).sort((a, b) => by(a, b) || a.name.localeCompare(b.name));
 }
-function renderList() {
-  document.querySelectorAll('[data-sort]').forEach(b => b.setAttribute('aria-pressed', b.dataset.sort === state.sort));
-  const list = $('list'), top = list.scrollTop, gain = state.sort === 'gain';
-  if (!state.streamers.length) { list.replaceChildren(el('li', { className: 'empty', textContent: 'No data yet. Streamers appear once the miner has loaded them.' })); return; }
-  list.replaceChildren(...sorted().map(s => {
-    const b = el('button', { type: 'button', className: s.online ? 'on' : '', title: s.online ? 'Online' : 'Offline' },
-      el('span', { className: 'dot' }),
-      el('span', { className: 'nm', textContent: s.name }),
-      el('span', { className: 'val num ' + (gain ? cls(s.session_gain) : ''), textContent: gain ? signed(s.session_gain) : fmt(s.points) }));
-    b.setAttribute('aria-current', s.name === state.sel);
-    b.onclick = () => select(s.name);
-    return el('li', null, b);
-  }));
-  list.scrollTop = top;
+const list = $('list'), rows = new Map();
+const emptyRow = el('li', { className: 'empty' });
+function renderSide() {
+  const t = state.totals;
+  if (t) {
+    text($('t-points'), fmt(t.points));
+    text($('t-gain'), signed(t.session_gain)); $('t-gain').className = 'num ' + cls(t.session_gain);
+    text($('t-online'), t.online + ' of ' + t.count);
+  }
+  for (const b of document.querySelectorAll('[data-sort]')) b.setAttribute('aria-pressed', b.dataset.sort === state.sort);
+  const items = sorted(), gain = state.sort === 'gain';
+  let nodes;
+  if (!items.length) {
+    text(emptyRow, state.streamers.length ? 'No streamer matches' : 'No streamers yet, they appear once the miner has loaded them');
+    nodes = [emptyRow];
+  } else nodes = items.map(s => {
+    let r = rows.get(s.name);
+    if (!r) {
+      const val = el('span', { className: 'val num' });
+      const btn = el('button', { type: 'button' }, el('span', { className: 'dot' }), el('span', { className: 'nm', textContent: s.name }), val);
+      btn.dataset.name = s.name;
+      rows.set(s.name, r = { li: el('li', null, btn), btn, val });
+    }
+    text(r.val, gain ? signed(s.session_gain) : fmt(s.points));
+    r.val.className = 'val num ' + (gain ? cls(s.session_gain) : '');
+    r.btn.classList.toggle('on', s.online);
+    r.btn.title = s.online ? 'Online' : 'Offline';
+    r.btn.setAttribute('aria-current', s.name === state.sel);
+    return r.li;
+  });
+  // Rows are reused; the DOM is only touched when the order really changed.
+  const cur = list.children;
+  let same = cur.length === nodes.length;
+  for (let i = 0; same && i < nodes.length; i++) same = cur[i] === nodes[i];
+  if (!same) list.replaceChildren(...nodes);
 }
 function select(name) {
-  if (name === state.sel) return;
-  state.sel = name; state.hover = null;
+  if (!name || name === state.sel) return;
+  state.sel = name; state.hover = null; state.logN = LOG_PAGE;
+  store.set('sel', name);
   history.replaceState(null, '', '#' + encodeURIComponent(name));
-  renderList(); renderHead(); loadDetail(false).catch(() => {});
+  renderSide();
+  rows.get(name)?.btn.scrollIntoView({ block: 'nearest' });
+  show(PREFETCH_MAX_AGE).catch(() => {});
 }
-document.querySelectorAll('[data-sort]').forEach(b => b.onclick = () => { state.sort = b.dataset.sort; store.set('sort', state.sort); renderList(); });
-document.querySelectorAll('[data-range]').forEach(b => b.onclick = () => {
-  state.range = b.dataset.range; store.set('range', state.range); state.hover = null;
-  renderHead(); loadDetail(false).catch(() => {});
+function step(dir) {
+  const items = sorted(), i = items.findIndex(s => s.name === state.sel);
+  const next = items[Math.max(0, Math.min(items.length - 1, i < 0 ? 0 : i + dir))];
+  if (next) select(next.name);
+  return next;
+}
+list.onclick = e => { const b = e.target.closest('button[data-name]'); if (b) select(b.dataset.name); };
+let warmTimer = 0;
+list.onpointerover = e => {
+  const b = e.target.closest('button[data-name]');
+  clearTimeout(warmTimer);
+  if (b) warmTimer = setTimeout(warm, 70, b.dataset.name, state.range);
+};
+list.onkeydown = e => {
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  e.preventDefault();
+  const next = step(e.key === 'ArrowDown' ? 1 : -1);
+  if (next) rows.get(next.name).btn.focus();
+};
+const q = $('q');
+q.oninput = () => { state.q = q.value.trim().toLowerCase(); renderSide(); };
+q.onkeydown = e => {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); step(e.key === 'ArrowDown' ? 1 : -1); }
+  else if (e.key === 'Enter') { const f = sorted()[0]; if (f) select(f.name); }
+  else if (e.key === 'Escape') { q.value = ''; q.oninput(); q.blur(); }
+};
+document.addEventListener('keydown', e => {
+  if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey && document.activeElement !== q) { e.preventDefault(); q.focus(); q.select(); }
 });
-
-/* ---------- header + legend ---------- */
-function renderHead() {
-  document.querySelectorAll('[data-range]').forEach(b => b.setAttribute('aria-pressed', b.dataset.range === state.range));
-  const s = state.streamers.find(x => x.name === state.sel), d = state.data;
-  $('d-label').textContent = s ? s.name + (s.online ? '' : ' · offline') : 'No streamer selected';
-  if (s) $('d-name').href = 'https://www.twitch.tv/' + encodeURIComponent(s.name); else $('d-name').removeAttribute('href');
-  $('d-dot').className = 'dot' + (s?.online ? ' on' : '');
-  $('d-points').textContent = s ? fmt(s.points) : '–';
-  const delta = $('d-delta');
-  if (s && d && d.name === state.sel && d.range === state.range && d.series.length) {
-    delta.replaceChildren(el('b', { className: 'num ' + cls(d.stats.gain), textContent: d.stats.gain ? signed(d.stats.gain) : 'No change' }), ' ' + RANGE_LABEL[d.range]);
-  } else delta.replaceChildren();
+for (const b of document.querySelectorAll('[data-sort]')) b.onclick = () => { state.sort = b.dataset.sort; store.set('sort', state.sort); renderSide(); };
+for (const b of document.querySelectorAll('[data-range]')) {
+  b.onclick = () => {
+    if (state.range === b.dataset.range) return;
+    state.range = b.dataset.range; store.set('range', state.range); state.hover = null; state.logN = LOG_PAGE;
+    show(PREFETCH_MAX_AGE).catch(() => {});
+  };
+  b.onpointerenter = () => warm(state.sel, b.dataset.range);
 }
-function stripLead(msg) {
-  return String(msg || '').replace(/^\p{Extended_Pictographic}\uFE0F?(?:\u200D\p{Extended_Pictographic}\uFE0F?)*\s+/u, '');
+
+/* ---------- header, legend, activity ---------- */
+function renderHead() {
+  for (const b of document.querySelectorAll('[data-range]')) b.setAttribute('aria-pressed', b.dataset.range === state.range);
+  const s = state.streamers.find(x => x.name === state.sel), d = state.data;
+  const live = s && d && d.name === state.sel && d.range === state.range && d.series.length > 0;
+  const name = $('d-name');
+  text(name, s ? s.name : 'No streamer selected');
+  if (s) name.href = 'https://www.twitch.tv/' + encodeURIComponent(s.name); else name.removeAttribute('href');
+  $('d-state').replaceChildren(...(s ? [el('span', { className: 'dot' + (s.online ? ' on' : '') }), s.online ? 'Online' : 'Offline'] : []));
+  text($('d-points'), s ? fmt(s.points) : '–');
+  const delta = $('d-delta');
+  if (live) delta.replaceChildren(el('span', { className: 'num ' + cls(d.stats.gain), textContent: d.stats.gain ? signed(d.stats.gain) : 'No change' }), ' ' + RANGE_LONG[d.range]);
+  else delta.replaceChildren();
+  text($('s-low-l'), 'Low, ' + RANGE_SHORT[state.range]);
+  text($('s-high-l'), 'High, ' + RANGE_SHORT[state.range]);
+  text($('s-low'), live ? fmt(d.stats.min) : '–');
+  text($('s-high'), live ? fmt(d.stats.max) : '–');
+  text($('s-session'), s ? signed(s.session_gain) : '–');
+  $('s-session').className = 'num ' + (s ? cls(s.session_gain) : '');
 }
 function renderLegend() {
   const counts = {};
   for (const e of state.data?.events || []) if (EV[e.type]) counts[e.type] = (counts[e.type] || 0) + 1;
-  const rows = ['pos', 'neg', 'neu'].map(tone => {
+  $('legend').replaceChildren(...['pos', 'neg', 'neu'].map(tone => {
     const types = Object.keys(EV).filter(t => counts[t] && EV[t].tone === tone);
     if (!types.length) return null;
-    const row = el('div', { className: 'lg ' + tone }, el('span', { className: 'k', textContent: TONE_LABEL[tone] }));
+    const row = el('div', { className: 'lg' }, el('span', { className: 'k lbl', textContent: TONE_LABEL[tone] }));
     row.setAttribute('role', 'group');
     row.setAttribute('aria-label', TONE_LABEL[tone]);
     for (const t of types) {
-      const b = el('button', { type: 'button', className: tone },
-        el('span', { className: 'g', textContent: EV[t].emoji }),
-        EV[t].label,
-        el('em', { className: 'num', textContent: fmt(counts[t]) }));
+      const b = el('button', { type: 'button' }, tag(t), el('span', { className: 'num', textContent: fmt(counts[t]) }));
       b.setAttribute('aria-pressed', !state.hidden.has(t));
       b.onclick = () => {
         state.hidden.has(t) ? state.hidden.delete(t) : state.hidden.add(t);
-        store.set('hidden', JSON.stringify([...state.hidden])); renderLegend(); draw();
+        store.set('hidden', JSON.stringify([...state.hidden]));
+        b.setAttribute('aria-pressed', !state.hidden.has(t));
+        renderLog(); draw();
       };
       row.append(b);
     }
     return row;
-  }).filter(Boolean);
-  $('legend').replaceChildren(...rows);
-  renderFeed();
+  }).filter(Boolean));
 }
-function renderFeed() {
-  const feed = $('feed');
-  const rows = (state.data?.events || []).filter(e => EV[e.type] && !state.hidden.has(e.type)).slice(-8).reverse();
-  if (!rows.length) { feed.replaceChildren(); feed.hidden = true; return; }
-  feed.hidden = false;
-  feed.replaceChildren(...rows.map(e => {
-    const k = EV[e.type];
-    const when = new Date(e.t);
-    return el('li', null,
-      el('span', { className: 'g', textContent: k.emoji }),
-      el('span', { className: 'lbl ' + k.tone, textContent: k.label }),
-      el('span', { className: 'msg', textContent: stripLead(e.msg) }),
-      el('time', { className: 'num', dateTime: when.toISOString(), textContent: when.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) }));
-  }));
-  if (state.data?.events_truncated) $('legend').append(el('span', { className: 'quiet', textContent: 'Older markers are hidden.' }));
+const shownEvents = d => d.events.filter(e => EV[e.type] && !state.hidden.has(e.type) && e.t >= d.from);
+let logSig = '';
+function renderLog() {
+  const d = state.data, evs = d ? shownEvents(d) : [];
+  const n = Math.min(evs.length, state.logN);
+  const sig = d ? [d.name, d.range, evs.length, evs[evs.length - 1]?.t, n, [...state.hidden]].join('|') : '';
+  if (sig === logSig) return;
+  logSig = sig;
+  text($('log-n'), !d ? '' : evs.length ? (d.events_truncated ? 'Latest ' : '') + fmt(evs.length) + (evs.length === 1 ? ' event' : ' events') : '');
+  const out = [], today = dfLong.format(new Date());
+  let day = '';
+  for (let i = evs.length - 1; i >= evs.length - n; i--) {
+    const e = evs[i], when = new Date(e.t), label = dfLong.format(when);
+    if (label !== day) { day = label; out.push(el('li', { className: 'day', textContent: label === today ? 'Today' : label })); }
+    const time = el('time', { className: 'num', textContent: dfTime.format(when) });
+    time.dateTime = when.toISOString();
+    out.push(el('li', { className: 'ev' }, time, tag(e.type), el('span', { className: 'm', textContent: eventSentence(e.msg) })));
+  }
+  if (d && !evs.length) out.push(el('li', { className: 'empty', textContent: 'No events ' + RANGE_LONG[d.range].replace('all time', 'yet') }));
+  $('log').replaceChildren(...out);
+  const more = $('more'), left = evs.length - n;
+  more.hidden = left <= 0;
+  if (left > 0) more.textContent = 'Show ' + fmt(Math.min(left, LOG_PAGE * 2)) + ' more';
 }
+$('more').onclick = () => { state.logN += LOG_PAGE * 2; renderLog(); };
 
 /* ---------- chart ---------- */
-const cv = $('cv'), ctx = cv.getContext('2d');
-let geo = null;
+const plot = $('plot'), cv = $('cv'), ov = $('ov'), tip = $('tip');
+const ctx = cv.getContext('2d'), octx = ov.getContext('2d');
+const PATH = {};
+for (const k in GLYPH) PATH[k] = new Path2D(GLYPH[k].d);
+let geo = null, W = 0, H = 0, DPR = 1;
+function fit() {
+  W = plot.clientWidth; H = plot.clientHeight; DPR = window.devicePixelRatio || 1;
+  const pw = Math.round(W * DPR), ph = Math.round(H * DPR);
+  for (const c of [cv, ov]) if (c.width !== pw || c.height !== ph) { c.width = pw; c.height = ph; }
+  return W > 0 && H > 0;
+}
 function niceTicks(lo, hi, n) {
   if (hi <= lo) { lo -= 1; hi += 1; }
   const raw = (hi - lo) / n, mag = 10 ** Math.floor(Math.log10(raw)), f = raw / mag;
@@ -359,102 +570,13 @@ function timeTicks(from, to, maxCount) {
 }
 function timeLabel(t, step) {
   const d = new Date(t);
-  const day = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  if (step >= DAY) return day;
-  return d.getHours() === 0 && d.getMinutes() === 0 ? day : d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return step >= DAY || (d.getHours() === 0 && d.getMinutes() === 0) ? dfDay.format(d) : dfTime.format(d);
 }
 function valueAt(series, t) {
   let lo = 0, hi = series.length - 1;
   if (!series.length || t < series[0][0]) return null;
   while (lo < hi) { const mid = (lo + hi + 1) >> 1; series[mid][0] <= t ? lo = mid : hi = mid - 1; }
   return series[lo][1];
-}
-function drawGlyph(x, y, k, dense, page, c, emph) {
-  const col = c(TONE_VAR[k.tone]);
-  ctx.beginPath();
-  ctx.arc(x, y, emph ? 11 : (dense ? 3.25 : 9), 0, Math.PI * 2);
-  ctx.fillStyle = dense && !emph ? col : page;
-  ctx.fill();
-  ctx.lineWidth = emph ? 2 : (dense ? 1.5 : 1.25);
-  ctx.strokeStyle = dense && !emph ? page : col;
-  ctx.stroke();
-  if (dense && !emph) return;
-  ctx.font = (emph ? 16 : 13) + 'px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(k.emoji, x, y + .5);
-}
-function draw() {
-  const w = cv.clientWidth, h = cv.clientHeight, dpr = window.devicePixelRatio || 1;
-  if (!w || !h) return;
-  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, w, h);
-  const css = getComputedStyle(document.documentElement), c = n => css.getPropertyValue(n).trim();
-  ctx.font = '12px system-ui, -apple-system, "Segoe UI", sans-serif';
-  const d = state.data;
-  state.marks = []; geo = null;
-  if (!d || !d.series.length) {
-    ctx.fillStyle = c('--muted'); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(d ? 'No data in this range yet' : '', w / 2, h / 2);
-    $('tip').style.display = 'none';
-    return;
-  }
-  const S = d.series, y0 = 10, y1 = h - 28;
-  const pad = Math.max(1, (d.stats.max - d.stats.min) * 0.12);
-  const yt = niceTicks(d.stats.min - pad, d.stats.max + pad, 4), yf = axisFormat(yt);
-  const lo = yt[0], hi = yt[yt.length - 1];
-  const x0 = Math.ceil(Math.max(...yt.map(v => ctx.measureText(yf(v)).width))) + 14, x1 = w - 8;
-  const span = Math.max(1, d.to - d.from);
-  const X = t => x0 + (t - d.from) / span * (x1 - x0), Y = v => y1 - (v - lo) / (hi - lo) * (y1 - y0);
-  geo = { X, Y, x0, x1, y0, y1, d };
-
-  // quiet grid and labels
-  ctx.lineWidth = 1; ctx.strokeStyle = c('--grid'); ctx.fillStyle = c('--muted');
-  ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
-  for (const v of yt) {
-    const y = Math.round(Y(v)) + .5;
-    ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
-    ctx.fillText(yf(v), x0 - 14, y);
-  }
-  const tt = timeTicks(d.from, d.to, Math.max(2, Math.floor((x1 - x0) / 130)));
-  ctx.textBaseline = 'top'; ctx.textAlign = 'center';
-  for (const t of tt.t) {
-    const x = X(t);
-    if (x < x0 + 24 || x > x1 - 24) continue;
-    ctx.fillText(timeLabel(t, tt.step), x, y1 + 10);
-  }
-
-  // step line: a balance holds until the next sample
-  const line = c('--line');
-  ctx.beginPath();
-  ctx.moveTo(X(S[0][0]), Y(S[0][1]));
-  for (let i = 1; i < S.length; i++) { ctx.lineTo(X(S[i][0]), Y(S[i - 1][1])); ctx.lineTo(X(S[i][0]), Y(S[i][1])); }
-  ctx.lineTo(x1, Y(S[S.length - 1][1]));
-  ctx.strokeStyle = line; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke();
-  ctx.lineTo(x1, y1); ctx.lineTo(X(S[0][0]), y1); ctx.closePath();
-  const fill = ctx.createLinearGradient(0, y0, 0, y1);
-  fill.addColorStop(0, line + '2e'); fill.addColorStop(1, line + '00');
-  ctx.fillStyle = fill; ctx.fill();
-
-  // event markers sit on the line; emoji when sparse, tone-colored dot when crowded
-  const shown = d.events.filter(e => EV[e.type] && !state.hidden.has(e.type) && e.t >= d.from);
-  const dense = shown.length > 48, page = c('--page');
-  const placed = [];
-  ctx.lineCap = 'butt';
-  for (const e of shown) {
-    let x = X(e.t), y = Y(valueAt(S, e.t) ?? S[0][1]);
-    if (!dense) {
-      let n = 0;
-      for (const p of placed) if (Math.abs(p.x - x) < 16 && Math.abs(p.y - y) < 16) n++;
-      y -= n * 16;
-      placed.push({ x, y });
-    }
-    const m = { x, y, e };
-    state.marks.push(m);
-    drawGlyph(m.x, m.y, EV[e.type], dense, page, c);
-  }
-  drawHover(c);
 }
 function stripEmoji(s) {
   return String(s || '').replace(/^(?:\p{Extended_Pictographic}\uFE0F?(?:\u200D\p{Extended_Pictographic}\uFE0F?)*)+\s+/u, '');
@@ -563,73 +685,153 @@ function sampleAt(series, t) {
   while (lo < hi) { const mid = (lo + hi + 1) >> 1; series[mid][0] <= t ? lo = mid : hi = mid - 1; }
   return { value: series[lo][1], prev: lo > 0 ? series[lo - 1][1] : null };
 }
-function drawHover(c) {
-  const tip = $('tip'), hv = state.hover;
-  if (!hv || !geo) { tip.style.display = 'none'; return; }
-  const { Y, x0, x1, y0, y1, d } = geo;
-  let near = null, bestD = 18 * 18;
-  for (const m of state.marks) {
-    const q = (m.x - hv.x) ** 2 + (m.y - hv.y) ** 2;
-    if (q <= bestD) { bestD = q; near = m; }
+// The base canvas holds grid, line and markers and is redrawn only when data, size or
+// theme change. Pointer movement repaints the small overlay canvas alone.
+function draw() {
+  if (!fit()) return;
+  const c = colors(), d = state.data;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  ctx.font = c.font;
+  state.marks = []; geo = null;
+  if (!d || !d.series.length) {
+    ctx.fillStyle = c.muted; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(d ? 'No data in this range yet' : '', W / 2, H / 2);
+    drawHover();
+    return;
   }
+  const S = d.series, y0 = 8, y1 = H - 28;
+  const pad = Math.max(1, (d.stats.max - d.stats.min) * 0.12);
+  const yt = niceTicks(d.stats.min - pad, d.stats.max + pad, 4), yf = axisFormat(yt);
+  const lo = yt[0], hi = yt[yt.length - 1];
+  const x0 = Math.ceil(Math.max(...yt.map(v => ctx.measureText(yf(v)).width))) + 12, x1 = W - 8;
+  const span = Math.max(1, d.to - d.from);
+  const X = t => x0 + (t - d.from) / span * (x1 - x0), Y = v => y1 - (v - lo) / (hi - lo) * (y1 - y0);
+  geo = { X, Y, x0, x1, y0, y1, d };
+
+  ctx.lineWidth = 1; ctx.strokeStyle = c.grid; ctx.fillStyle = c.muted;
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
+  ctx.beginPath();
+  for (const v of yt) {
+    const y = Math.round(Y(v)) + .5;
+    ctx.moveTo(x0, y); ctx.lineTo(x1, y);
+    ctx.fillText(yf(v), x0 - 12, y);
+  }
+  ctx.stroke();
+  const tt = timeTicks(d.from, d.to, Math.max(2, Math.floor((x1 - x0) / 130)));
+  ctx.textBaseline = 'top'; ctx.textAlign = 'center';
+  for (const t of tt.t) {
+    const x = X(t);
+    if (x >= x0 + 24 && x <= x1 - 24) ctx.fillText(timeLabel(t, tt.step), x, y1 + 12);
+  }
+
+  // Step line: a balance holds until the next sample.
+  const lastY = Y(S[S.length - 1][1]);
+  ctx.beginPath();
+  ctx.moveTo(X(S[0][0]), Y(S[0][1]));
+  for (let i = 1; i < S.length; i++) { const x = X(S[i][0]); ctx.lineTo(x, Y(S[i - 1][1])); ctx.lineTo(x, Y(S[i][1])); }
+  ctx.lineTo(x1, lastY);
+  ctx.strokeStyle = c.line; ctx.lineWidth = 1.75; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke();
+  ctx.lineTo(x1, y1); ctx.lineTo(X(S[0][0]), y1); ctx.closePath();
+  ctx.fillStyle = c.wash; ctx.fill();
+
+  // Event markers sit on the line.
+  const shown = shownEvents(d), dense = shown.length > 200, r = dense ? 2.25 : 3.5;
+  ctx.lineCap = 'round';
+  for (const e of shown) {
+    const m = { x: X(e.t), y: Y(valueAt(S, e.t) ?? S[0][1]), e };
+    state.marks.push(m);
+    const k = EV[e.type], g = GLYPH[k.glyph], p = PATH[k.glyph], s = r * (k.scale || 1);
+    ctx.setTransform(DPR * s, 0, 0, DPR * s, DPR * m.x, DPR * m.y);
+    if (g.line) {
+      if (g.open) { ctx.fillStyle = c.card; ctx.fill(p); }
+      ctx.strokeStyle = c[TONE_COLOR[k.tone]]; ctx.lineWidth = 1.5 / s; ctx.stroke(p);
+    } else {
+      if (!dense) { ctx.strokeStyle = c.card; ctx.lineWidth = 2 / s; ctx.stroke(p); }
+      ctx.fillStyle = c[TONE_COLOR[k.tone]]; ctx.fill(p);
+    }
+  }
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  // The current balance, where the line ends.
+  ctx.beginPath(); ctx.arc(x1, lastY, 3, 0, Math.PI * 2);
+  ctx.fillStyle = c.line; ctx.fill(); ctx.strokeStyle = c.card; ctx.lineWidth = 2; ctx.stroke();
+  drawHover();
+}
+function nearestMark(hx, hy) {
+  // Marks are in time order, so only the few within reach of the pointer are tested.
+  const M = state.marks, reach = 14;
+  let lo = 0, hi = M.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; M[mid].x < hx - reach ? lo = mid + 1 : hi = mid; }
+  let near = null, best = reach * reach;
+  for (let i = lo; i < M.length && M[i].x <= hx + reach; i++) {
+    const dist = (M[i].x - hx) ** 2 + (M[i].y - hy) ** 2;
+    if (dist <= best) { best = dist; near = M[i]; }
+  }
+  return near;
+}
+function drawHover() {
+  octx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  octx.clearRect(0, 0, W, H);
+  const hv = state.hover;
+  if (!hv || !geo) { tip.hidden = true; return; }
+  const c = colors(), { Y, x0, x1, y0, y1, d } = geo;
+  const near = nearestMark(hv.x, hv.y);
+  // Events that land on the same pixel column share one tooltip, newest six shown.
   let shown = [], extra = 0;
   if (near) {
     const col = state.marks.filter(m => Math.abs(m.x - near.x) <= 2);
-    col.sort((a, b) => a.e.t - b.e.t);
     extra = Math.max(0, col.length - 6);
     shown = col.slice(-6);
   }
   const px = near ? near.x : Math.min(x1, Math.max(x0, hv.x));
   const t = near ? near.e.t : d.from + (px - x0) / (x1 - x0) * (d.to - d.from);
-  const sample = sampleAt(d.series, t);
-  const v = sample ? sample.value : null;
-  ctx.strokeStyle = c('--muted'); ctx.lineWidth = 1; ctx.globalAlpha = .5;
-  ctx.beginPath(); ctx.moveTo(Math.round(px) + .5, y0); ctx.lineTo(Math.round(px) + .5, y1); ctx.stroke();
-  ctx.globalAlpha = 1;
-  if (v !== null && !near) {
-    ctx.beginPath(); ctx.arc(px, Y(v), 4, 0, Math.PI * 2);
-    ctx.fillStyle = c('--line'); ctx.fill(); ctx.strokeStyle = c('--page'); ctx.lineWidth = 2; ctx.stroke();
+  const sample = sampleAt(d.series, t), v = sample ? sample.value : null;
+  octx.strokeStyle = c.muted; octx.lineWidth = 1; octx.globalAlpha = .5;
+  octx.beginPath(); octx.moveTo(Math.round(px) + .5, y0); octx.lineTo(Math.round(px) + .5, y1); octx.stroke();
+  octx.globalAlpha = 1;
+  if (near) {
+    octx.strokeStyle = c.ink; octx.lineWidth = 1;
+    for (const m of shown) { octx.beginPath(); octx.arc(m.x, m.y, 7, 0, Math.PI * 2); octx.stroke(); }
+  } else if (v !== null) {
+    octx.beginPath(); octx.arc(px, Y(v), 4, 0, Math.PI * 2);
+    octx.fillStyle = c.line; octx.fill(); octx.strokeStyle = c.card; octx.lineWidth = 2; octx.stroke();
   }
-  const page = c('--page');
-  for (const m of shown) drawGlyph(m.x, m.y, EV[m.e.type], false, page, c, true);
-  const when = new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-  const rows = [el('div', { className: 'v num', textContent: v === null ? 'No points recorded yet.' : fmt(v) + ' points' })];
+  const kids = [el('div', { className: 'v num', textContent: v === null ? 'No data' : fmt(v) })];
   if (sample && sample.prev !== null && sample.prev !== v) {
-    const delta = v - sample.prev;
-    rows.push(el('div', { className: 'd ' + cls(delta), textContent: (delta > 0 ? 'Up ' : 'Down ') + fmt(Math.abs(delta)) + ' points from the previous point.' }));
+    kids.push(el('div', null, el('span', { className: 'num ' + cls(v - sample.prev), textContent: signed(v - sample.prev) }), ' vs previous sample'));
   }
-  rows.push(el('div', { className: 't', textContent: when }));
+  kids.push(el('div', { className: 't num', textContent: dfTip.format(new Date(t)) }));
   const sameMinute = shown.every(m => Math.abs(m.e.t - shown[0].e.t) < 60000);
   for (const m of shown) {
-    const k = EV[m.e.type];
-    const label = sameMinute ? k.label : k.label + ' at ' + new Date(m.e.t).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-    const text = eventSentence(m.e.msg);
-    const head = el('b', null, el('span', { className: 'g', textContent: k.emoji }), label);
-    const body = text ? [head, el('div', { className: 'm', textContent: text })] : [head];
-    rows.push(el('div', { className: 'e ' + k.tone }, ...body));
+    const head = tag(m.e.type), msg = eventSentence(m.e.msg);
+    if (!sameMinute) head.append(' at ' + dfTime.format(new Date(m.e.t)));
+    kids.push(el('div', { className: 'e' }, head, ...(msg ? [el('div', { className: 'm', textContent: msg })] : [])));
   }
-  if (extra) rows.push(el('div', { className: 'more', textContent: extra + ' earlier event' + (extra === 1 ? ' is' : 's are') + ' hidden on this point.' }));
-  tip.replaceChildren(...rows);
-  tip.style.display = 'block';
-  const box = $('plot').getBoundingClientRect(), tw = tip.offsetWidth, th = tip.offsetHeight;
-  let left = px + 14; if (left + tw > box.width - 4) left = px - tw - 14;
+  if (extra) kids.push(el('div', { className: 'more', textContent: fmt(extra) + (extra === 1 ? ' earlier event' : ' earlier events') + ' on this point' }));
+  tip.replaceChildren(...kids);
+  tip.hidden = false;
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  let left = px + 12; if (left + tw > W - 4) left = px - tw - 12;
   const anchorY = near ? near.y : hv.y;
   let top = anchorY - th - 12;
-  if (top < 4) top = Math.min(box.height - th - 4, anchorY + 14);
-  tip.style.left = Math.max(4, left) + 'px';
-  tip.style.top = Math.max(4, top) + 'px';
+  if (top < 4) top = Math.min(H - th - 4, anchorY + 14);
+  tip.style.transform = `translate(${Math.round(Math.max(4, left))}px,${Math.round(Math.max(4, top))}px)`;
 }
-let raf = 0;
-const redraw = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); };
-cv.addEventListener('pointermove', e => { const b = cv.getBoundingClientRect(); state.hover = { x: e.clientX - b.left, y: e.clientY - b.top }; redraw(); });
-cv.addEventListener('pointerleave', () => { state.hover = null; redraw(); });
-new ResizeObserver(redraw).observe($('plot'));
+let raf = 0, rafFull = false;
+function schedule(full) {
+  rafFull = rafFull || full;
+  if (!raf) raf = requestAnimationFrame(() => { raf = 0; const f = rafFull; rafFull = false; f ? draw() : drawHover(); });
+}
+ov.addEventListener('pointermove', e => { const b = ov.getBoundingClientRect(); state.hover = { x: e.clientX - b.left, y: e.clientY - b.top }; schedule(false); });
+ov.addEventListener('pointerleave', () => { state.hover = null; schedule(false); });
+new ResizeObserver(() => schedule(true)).observe(plot);
 
 /* ---------- boot ---------- */
-setTheme(store.get('theme', matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
-refresh(false);
-setInterval(() => { if (!document.hidden) refresh(true); }, REFRESH_MS);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(true); });
+setTheme(root.dataset.theme);
+renderHead();
+refresh();
+setInterval(() => { if (!document.hidden) refresh(); }, REFRESH_MS);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
 </script>
 </body>
 </html>
