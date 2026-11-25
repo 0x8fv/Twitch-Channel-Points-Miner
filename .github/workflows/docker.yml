@@ -3,13 +3,12 @@ name: docker
 # Builds the image on every push and pull request, and publishes it to the
 # GitHub Container Registry (GHCR) for non-PR runs:
 #   main        -> latest + main + sha-<commit>
-#   docker      -> docker + sha-<commit>   (branch builds, no latest)
 #   v* / 1.x    -> semver tags + sha-<commit>
 # PRs are build-only: they never receive registry credentials.
 
 on:
   push:
-    branches: [main, docker]
+    branches: [main]
     tags: ["v*", "[0-9]*"]
   pull_request:
     branches: [main]

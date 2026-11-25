@@ -138,7 +138,7 @@ This is what the Docker setup uses. See [Docker](#docker), `docker-compose.yml`,
 
 The two-stage `Dockerfile` cross-compiles a static binary and runs it on `scratch`. The final image has no shell or package manager, runs as the non-root UID/GID `10001`, and keeps all persistent data under `/app/data`. Auto-update is disabled inside the image; the image itself is the unit of update.
 
-A multi-arch image (`linux/amd64`, `linux/arm64`) is built by `.github/workflows/docker.yml` and published to the GitHub Container Registry (GHCR). Pushes to `main` publish `latest`, pushes to the `docker` branch publish `docker`, and version tags publish semver tags. Pull requests only build the image, without publishing it. Branch builds also carry a `sha-<commit>` tag, so a branch can be tested before it is merged into `main`.
+A multi-arch image (`linux/amd64`, `linux/arm64`) is built by `.github/workflows/docker.yml` and published to the GitHub Container Registry (GHCR). Pushes to `main` publish `latest` and a `sha-<commit>` tag; version tags publish semver tags. Pull requests only build the image, without publishing it.
 
 ### Quick start (prebuilt image)
 
