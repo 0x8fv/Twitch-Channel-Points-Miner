@@ -34,10 +34,17 @@ func TestStreamUpdateAndFlags(t *testing.T) {
 
 func TestStreamWatchProgress(t *testing.T) {
 	stream := NewStream()
-	stream.lastMinuteUpdate = time.Now().Add(-2 * time.Minute)
+	stream.lastMinuteUpdate = time.Now().Add(-90 * time.Second)
 	stream.UpdateMinuteWatched()
-	if stream.MinuteWatched < 1.9 || stream.MinuteWatched > 2.1 {
+	if stream.MinuteWatched < 1.4 || stream.MinuteWatched > 1.6 {
 		t.Fatalf("minute watched out of range: %f", stream.MinuteWatched)
+	}
+
+	// A gap of more than two minutes means the stream was not watched continuously.
+	stream.lastMinuteUpdate = time.Now().Add(-3 * time.Minute)
+	stream.UpdateMinuteWatched()
+	if stream.MinuteWatched != 0 {
+		t.Fatalf("a long gap should reset the progress, got %f", stream.MinuteWatched)
 	}
 	stream.WatchCount = 2
 	stream.CreatedAt = time.Now()
