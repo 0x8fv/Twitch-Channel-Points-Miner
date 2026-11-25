@@ -963,7 +963,7 @@ func (t *Twitch) SendMinuteWatched(streamer *entities.Streamer) error {
 	if err := t.UpdateStream(streamer); err != nil {
 		return err
 	}
-	if err := t.sendWatchPlaylist(streamer); err != nil {
+	if err := t.sendWatchPlaylist(streamer); err != nil && t.logger != nil {
 		name := displayName(streamer.Username)
 		if t.anonymizer != nil && t.anonymizer.Enabled() {
 			name = t.anonymizer.StreamerName(streamer)
