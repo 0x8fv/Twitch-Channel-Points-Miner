@@ -69,13 +69,15 @@ main { display: grid; grid-template-columns: 250px 1fr; gap: 48px; min-height: 0
 .plot { position: relative; flex: 1; min-height: 260px; margin-top: 20px; transition: opacity .15s; }
 .plot.loading { opacity: .5; }
 canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-#tip { position: absolute; pointer-events: none; z-index: 2; display: none; max-width: 300px; background: var(--tip); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; box-shadow: 0 6px 24px rgba(0,0,0,.16); font-size: 12px; }
+#tip { position: absolute; pointer-events: none; z-index: 2; display: none; max-width: 340px; background: var(--tip); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; box-shadow: 0 6px 24px rgba(0,0,0,.16); font-size: 12px; }
 #tip .v { font-size: 15px; font-weight: 600; }
+#tip .d { font-weight: 600; }
 #tip .t { color: var(--ink2); }
 #tip .e { margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--border); }
 #tip .e b { display: flex; align-items: center; gap: 6px; font-weight: 600; }
 #tip .e i { width: 7px; height: 7px; border-radius: 50%; }
-#tip .m { color: var(--ink2); overflow-wrap: anywhere; }
+#tip .m { color: var(--ink2); margin-top: 2px; line-height: 1.4; overflow-wrap: anywhere; }
+#tip .more { color: var(--muted); margin-top: 6px; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 18px; min-height: 22px; margin-top: 10px; font-size: 12px; }
 .legend button { display: inline-flex; align-items: center; gap: 6px; color: var(--ink2); }
 .legend button:hover { color: var(--ink); }
@@ -126,7 +128,7 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
           <button type="button" data-range="all">All</button>
         </div>
       </div>
-      <div class="plot" id="plot"><canvas id="cv" role="img" aria-label="Channel points over time"></canvas><div id="tip"></div></div>
+      <div class="plot" id="plot"><canvas id="cv" role="img" aria-label="Channel points over time"></canvas><div id="tip" role="tooltip"></div></div>
       <div class="legend" id="legend" aria-label="Event markers (click to show or hide)"></div>
     </section>
   </main>
@@ -276,6 +278,7 @@ function renderLegend() {
     };
     return b;
   }));
+  if (state.data?.events_truncated) $('legend').append(el('span', { className: 'quiet', textContent: 'Older markers are hidden.' }));
 }
 
 /* ---------- chart ---------- */
@@ -397,18 +400,136 @@ function draw() {
   }
   drawHover(c);
 }
+function stripEmoji(s) {
+  for (const ch of ['🥳', '😴', '🚀', '📊', '🍀', '⏰', '🎭', '💬', '📦', '🟢', '🛑', '🎁', '📹']) {
+    if (s.startsWith(ch)) return s.slice(ch.length).trim();
+  }
+  return s;
+}
+function pointsOf(subject) {
+  const m = /^(.*)\s+\(([^)]*points)\)\s*$/i.exec(subject.trim());
+  return m ? [m[1].trim(), m[2].trim()] : [subject.trim(), ''];
+}
+function presenceSentence(subject, game, streak, verb) {
+  const [name, points] = pointsOf(subject);
+  let s = (name || 'The channel') + ' is ' + verb;
+  if (points) s += ' with ' + points;
+  if (game) s += ', playing ' + game;
+  s += '.';
+  if (streak) s += ' The watch streak is ' + streak + '.';
+  return s;
+}
+function shortOutcome(s) {
+  s = s.replace(/,\s*points:.*$/i, '').trim();
+  s = s.replace(/^(?:[A-Z]|#\d+):\s*/, '').replace(/\s+\([A-Z]+\)$/, '').trim();
+  return s;
+}
+// Legacy console lines (and anything already rewritten) become a sentence for the tooltip.
+function eventSentence(msg) {
+  let s = stripEmoji(String(msg || '')).replace(/\s+/g, ' ').trim();
+  if (!s) return '';
+  const pipes = s.split(/\s+\|\s+/);
+  const head = pipes[0];
+  let game = '', streak = '';
+  for (const raw of pipes.slice(1)) {
+    const p = raw.trim(), low = p.toLowerCase();
+    if (/^(?:playing|game):/i.test(p)) { if (!game) game = p.slice(p.indexOf(':') + 1).trim(); }
+    else if (low.startsWith('streak length ')) { const n = parseInt(p.slice(14), 10); if (n > 0) streak = String(n); }
+  }
+  const low = head.toLowerCase();
+  let m;
+  if (low.startsWith('start session:')) return 'The mining session has started.';
+  if (low.startsWith('ending session:')) return 'The mining session has ended.';
+  if ((m = /^(.*?)\s+is\s+(online|offline)!?$/i.exec(head))) return presenceSentence(m[1], game, streak, m[2].toLowerCase());
+  const arrow = head.includes('→') ? '→' : (head.includes('->') ? '->' : '');
+  if (arrow && (m = /^([+\-−]\d[\d.,]*[kKmM]?)\s*(?:→|->)\s*(.*?)\s*(?:-\s*reason:\s*\S+)?$/i.exec(head))) {
+    const [name, balance] = pointsOf(m[2].replace(/\s*-\s*reason:.*$/i, ''));
+    const lost = m[1][0] === '-' || m[1][0] === '−';
+    const n = m[1].slice(1);
+    const reason = ((/-\s*reason:\s*(\S+)/i.exec(head) || [])[1] || '').toUpperCase();
+    let why = '';
+    if (reason === 'WATCH') why = game ? ' for watching ' + game : ' for watching';
+    else if (reason === 'WATCH_STREAK') why = ' for a watch streak';
+    else if (reason === 'CLAIM') why = ' from a bonus claim';
+    else if (reason === 'RAID') why = ' for a raid';
+    else if (game) why = ' while playing ' + game;
+    let out = name + (lost ? ' lost ' : ' gained ') + n + ' points' + why;
+    if (balance) out += ' and now has ' + balance;
+    out += '.';
+    if (streak) out += ' The watch streak is ' + streak + '.';
+    return out;
+  }
+  if (low.startsWith('eventprediction:')) {
+    const parts = head.slice(head.indexOf(':') + 1).split(/\s+-\s+/).map(p => p.trim()).filter(Boolean);
+    let name = '', title = '', choice = '', result = '';
+    for (const part of parts) {
+      if (/^decision:/i.test(part)) choice = shortOutcome(part.replace(/^decision:\s*/i, ''));
+      else if (/^result:/i.test(part)) result = part.replace(/^result:\s*/i, '').replace(/,\s*(?:gained|lost|refunded):\s*/i, ' ').replace(/\s+/g, ' ').trim();
+      else if (!name) name = part;
+      else if (!title) title = part;
+    }
+    const bits = result.split(/\s+/);
+    const kind = (bits[0] || '').toUpperCase();
+    const pts = (bits.at(-1) || '').replace(/^[+\-−]/, '');
+    let out = name || 'The bet';
+    if (kind === 'WIN') out += pts ? ' won ' + pts + ' points' : ' won the bet';
+    else if (kind === 'LOSE') out += pts ? ' lost ' + pts + ' points' : ' lost the bet';
+    else if (kind === 'REFUND') out += pts ? ' was refunded ' + pts + ' points' : ' was refunded';
+    else out += ' finished a bet';
+    if (title) out += ' on "' + title + '"';
+    if (choice) out += ' after choosing ' + choice;
+    return out + '.';
+  }
+  if ((m = /^place\s+([\d.,]+)\s+points on:\s*(.+)\s+for\s+(.+)$/i.exec(head))) return m[3] + ' placed ' + m[1] + ' points on ' + shortOutcome(m[2]) + '.';
+  if ((m = /^place bet on:\s*(.+)\s+for\s+(.+)$/i.exec(head))) return m[2] + ' placed a bet on ' + shortOutcome(m[1]) + '.';
+  if ((m = /^place bet after\s+(.+)\s+for\s+(.+)$/i.exec(head))) return 'The bet for ' + m[2] + ' will be placed in ' + m[1] + '.';
+  if ((m = /^skip bet for\s+(.+?):\s*(.+)$/i.exec(head))) return 'The bet for ' + m[1] + ' was skipped because ' + m[2].replace(/_/g, ' ') + '.';
+  if ((m = /^prediction\s+(.+?):\s*(.+)$/i.exec(head))) return 'The prediction for ' + m[1] + ' failed: ' + m[2].replace(/\.$/, '') + '.';
+  if ((m = /^joining raid from\s+(.+)\s+to\s+(.+)$/i.exec(head))) return 'Joining the raid from ' + m[1] + ' to ' + m[2] + '.';
+  if ((m = /^(.+)\s+claimed moment$/i.exec(head))) return m[1] + ' claimed a moment.';
+  if ((m = /^claim\s+(.+)\s+\((.+)\)\s+(\S+(?:\s+\([^)]*\))?)\s*$/i.exec(head))) return 'Claimed ' + m[1] + ' from the ' + m[2] + ' campaign, now at ' + m[3] + '.';
+  if ((m = /^drop_progress\s+\[[^\]]*\]\s+(\d+%)\s*$/i.exec(head))) {
+    let desc = pipes.slice(1).join(' | ');
+    const cut = desc.toLowerCase().indexOf(' / remaining ');
+    if (cut >= 0) desc = desc.slice(0, cut);
+    const slash = desc.lastIndexOf(' / ');
+    const tail = slash >= 0 ? desc.slice(slash + 3).trim() : '';
+    if (slash >= 0 && tail.includes(' of ') && tail.includes('m')) {
+      const [a, b] = tail.split(/\s+of\s+/);
+      return 'The drop ' + desc.slice(0, slash).trim() + ' is ' + m[1] + ' complete, with ' + a.trim() + ' watched out of ' + b.trim() + '.';
+    }
+    return desc ? 'The drop ' + desc + ' is ' + m[1] + ' complete.' : 'The drop is ' + m[1] + ' complete.';
+  }
+  if ((m = /^(.+)\s+at\s+#(\S+)\s+wrote:\s*([\s\S]+)$/i.exec(head))) return m[1] + ' mentioned you in #' + m[2] + ': "' + m[3].trim() + '".';
+  if ((m = /^([+\-−])(\d[\d,]*)\s+points\.?$/i.exec(head))) return (m[1] === '+' ? 'Gained ' : 'Lost ') + m[2] + ' points.';
+  return s;
+}
+function sampleAt(series, t) {
+  let lo = 0, hi = series.length - 1;
+  if (!series.length || t < series[0][0]) return null;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; series[mid][0] <= t ? lo = mid : hi = mid - 1; }
+  return { value: series[lo][1], prev: lo > 0 ? series[lo - 1][1] : null };
+}
 function drawHover(c) {
   const tip = $('tip'), hv = state.hover;
   if (!hv || !geo) { tip.style.display = 'none'; return; }
   const { Y, x0, x1, y0, y1, d } = geo;
-  let near = null, best = 14 * 14;
+  let near = null, bestD = 18 * 18;
   for (const m of state.marks) {
     const q = (m.x - hv.x) ** 2 + (m.y - hv.y) ** 2;
-    if (q <= best) { best = q; near = m; }
+    if (q <= bestD) { bestD = q; near = m; }
+  }
+  let shown = [], extra = 0;
+  if (near) {
+    const col = state.marks.filter(m => Math.abs(m.x - near.x) <= 2);
+    col.sort((a, b) => a.e.t - b.e.t);
+    extra = Math.max(0, col.length - 6);
+    shown = col.slice(-6);
   }
   const px = near ? near.x : Math.min(x1, Math.max(x0, hv.x));
   const t = near ? near.e.t : d.from + (px - x0) / (x1 - x0) * (d.to - d.from);
-  const v = valueAt(d.series, t);
+  const sample = sampleAt(d.series, t);
+  const v = sample ? sample.value : null;
   ctx.strokeStyle = c('--muted'); ctx.lineWidth = 1; ctx.globalAlpha = .5;
   ctx.beginPath(); ctx.moveTo(Math.round(px) + .5, y0); ctx.lineTo(Math.round(px) + .5, y1); ctx.stroke();
   ctx.globalAlpha = 1;
@@ -416,18 +537,39 @@ function drawHover(c) {
     ctx.beginPath(); ctx.arc(px, Y(v), 4, 0, Math.PI * 2);
     ctx.fillStyle = c('--line'); ctx.fill(); ctx.strokeStyle = c('--page'); ctx.lineWidth = 2; ctx.stroke();
   }
-  const when = new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-  const rows = [el('div', { className: 'v num', textContent: v === null ? 'No data' : fmt(v) }), el('div', { className: 't', textContent: when })];
-  if (near) {
-    const k = EV[near.e.type], dot = el('i'); dot.style.background = c(k.color);
-    rows.push(el('div', { className: 'e' }, el('b', null, dot, k.label), el('div', { className: 'm', textContent: near.e.msg })));
+  const page = c('--page');
+  for (const m of shown) {
+    const k = EV[m.e.type], col = c(k.color);
+    shape(k.shape, m.x, m.y, 6);
+    ctx.strokeStyle = page; ctx.lineWidth = 3; ctx.stroke();
+    if (k.shape === 'ring' || k.shape === 'cross') { ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.stroke(); }
+    else { ctx.fillStyle = col; ctx.fill(); }
   }
+  const when = new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const rows = [el('div', { className: 'v num', textContent: v === null ? 'No points recorded yet.' : fmt(v) + ' points' })];
+  if (sample && sample.prev !== null && sample.prev !== v) {
+    const delta = v - sample.prev;
+    rows.push(el('div', { className: 'd ' + cls(delta), textContent: (delta > 0 ? 'Up ' : 'Down ') + fmt(Math.abs(delta)) + ' points from the previous point.' }));
+  }
+  rows.push(el('div', { className: 't', textContent: when }));
+  const sameMinute = shown.every(m => Math.abs(m.e.t - shown[0].e.t) < 60000);
+  for (const m of shown) {
+    const k = EV[m.e.type], dot = el('i'); dot.style.background = c(k.color);
+    const label = sameMinute ? k.label : k.label + ' at ' + new Date(m.e.t).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    const text = eventSentence(m.e.msg);
+    const body = text ? [el('b', null, dot, label), el('div', { className: 'm', textContent: text })] : [el('b', null, dot, label)];
+    rows.push(el('div', { className: 'e' }, ...body));
+  }
+  if (extra) rows.push(el('div', { className: 'more', textContent: extra + ' earlier event' + (extra === 1 ? ' is' : 's are') + ' hidden on this point.' }));
   tip.replaceChildren(...rows);
   tip.style.display = 'block';
   const box = $('plot').getBoundingClientRect(), tw = tip.offsetWidth, th = tip.offsetHeight;
   let left = px + 14; if (left + tw > box.width - 4) left = px - tw - 14;
+  const anchorY = near ? near.y : hv.y;
+  let top = anchorY - th - 12;
+  if (top < 4) top = Math.min(box.height - th - 4, anchorY + 14);
   tip.style.left = Math.max(4, left) + 'px';
-  tip.style.top = Math.max(4, Math.min(box.height - th - 4, hv.y - th - 12)) + 'px';
+  tip.style.top = Math.max(4, top) + 'px';
 }
 let raf = 0;
 const redraw = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); };

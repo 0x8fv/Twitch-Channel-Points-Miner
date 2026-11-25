@@ -25,6 +25,21 @@ var ranges = map[string]time.Duration{
 // Gains shown as chart markers, derived from recorded point reasons.
 var markerReasons = map[string]bool{"WATCH_STREAK": true, "CLAIM": true, "RAID": true}
 
+func pointsSentence(delta int) string {
+	n := delta
+	if n < 0 {
+		n = -n
+	}
+	switch {
+	case delta < 0:
+		return fmt.Sprintf("Lost %d points.", n)
+	case delta == 0:
+		return "Points did not change."
+	default:
+		return fmt.Sprintf("Gained %d points.", n)
+	}
+}
+
 // Server serves the dashboard UI and its JSON API.
 type Server struct {
 	store *Store
@@ -142,7 +157,7 @@ func (s *Server) handleStreamer(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, p := range points {
 		if markerReasons[p.R] {
-			events = append(events, Event{T: p.T, Type: p.R, Msg: fmt.Sprintf("%+d points", p.D)})
+			events = append(events, Event{T: p.T, Type: p.R, Msg: pointsSentence(p.D)})
 		}
 	}
 	sort.SliceStable(events, func(i, j int) bool { return events[i].T < events[j].T })

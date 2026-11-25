@@ -49,7 +49,7 @@ func TestAnalyticsSinkReceivesPointsAndEvents(t *testing.T) {
 	}
 	// The watch-streak gain is itself logged as an event, followed by the explicit one.
 	last := sink.events[len(sink.events)-1]
-	if last != "STREAMER_ONLINE|Alice is Online!" {
-		t.Fatalf("event should arrive ANSI-stripped, got %q (all: %v)", last, sink.events)
+	if last != "STREAMER_ONLINE|Alice is online." {
+		t.Fatalf("event should arrive as a short summary, got %q (all: %v)", last, sink.events)
 	}
 }

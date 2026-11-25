@@ -1,9 +1,13 @@
 package twitchchannelpointsminer
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
+	"log"
 	"net/http"
-	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/constants"
@@ -23,6 +27,7 @@ type DiscordWebhook struct {
 	webhookAPI string
 	events     map[constants.Event]struct{}
 	client     *http.Client
+	warnOnce   sync.Once
 }
 
 func NewDiscordWebhook(settings DiscordSettings) *DiscordWebhook {
@@ -45,30 +50,73 @@ func NewDiscordWebhook(settings DiscordSettings) *DiscordWebhook {
 	}
 }
 
+type discordEmbed struct {
+	Title       string `json:"title"`
+	Description string `json:"description,omitempty"`
+	Color       int    `json:"color"`
+}
+
+type discordPayload struct {
+	Username  string         `json:"username"`
+	AvatarURL string         `json:"avatar_url"`
+	Embeds    []discordEmbed `json:"embeds"`
+}
+
+// Send posts a short embed if the event is selected. An empty events list sends
+// every event except the noisy ones, matching Telegram. Failures never interrupt
+// the miner; the webhook URL (it contains a secret) is never logged.
 func (d *DiscordWebhook) Send(message string, event constants.Event) {
-	if d == nil {
+	if d == nil || !wantsEvent(d.events, event) {
 		return
 	}
-	if len(d.events) > 0 {
-		if _, ok := d.events[event]; !ok {
-			return
-		}
-	} else if event == "" {
-		return
+	body := eventSentence(message)
+	title := eventTitle(event)
+	if strings.EqualFold(body, title) {
+		body = ""
 	}
-	payload := url.Values{
-		"content":    []string{message},
-		"username":   []string{discordUsername},
-		"avatar_url": []string{discordAvatarURL},
+	if r := []rune(title); len(r) > 256 {
+		title = string(r[:256])
 	}
-	req, err := http.NewRequest(http.MethodPost, d.webhookAPI, strings.NewReader(payload.Encode()))
+	if r := []rune(body); len(r) > 4096 {
+		body = string(r[:4095]) + "…"
+	}
+	payload := discordPayload{
+		Username:  discordUsername,
+		AvatarURL: discordAvatarURL,
+		Embeds: []discordEmbed{{
+			Title:       title,
+			Description: body,
+			Color:       eventColor(event),
+		}},
+	}
+	raw, err := json.Marshal(payload)
 	if err != nil {
 		return
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req, err := http.NewRequest(http.MethodPost, d.webhookAPI, bytes.NewReader(raw))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
 	resp, err := d.client.Do(req)
 	if err != nil {
+		d.warn("request failed (network error or timeout)")
 		return
 	}
-	_ = resp.Body.Close()
+	defer resp.Body.Close()
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return
+	}
+	snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 180))
+	reason := strings.TrimSpace(string(snippet))
+	if reason == "" {
+		reason = resp.Status
+	}
+	d.warn(reason)
+}
+
+func (d *DiscordWebhook) warn(reason string) {
+	d.warnOnce.Do(func() {
+		log.Printf("discord: notification not delivered: %s (further failures are not logged)", reason)
+	})
 }

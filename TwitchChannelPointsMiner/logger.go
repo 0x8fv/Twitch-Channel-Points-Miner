@@ -14,18 +14,18 @@ import (
 )
 
 type LoggerSettings struct {
-	Save             bool `json:"save"`
-	ConsoleLevel     int  `json:"console_level"`
-	FileLevel        int  `json:"file_level"`
-	Emoji            bool `json:"emoji"`
-	Smart            bool `json:"smart"`
-	ShowSeconds      bool `json:"show_seconds"`
-	ConsoleUsername  bool `json:"console_username"`
-	ShowClaimedBonus bool `json:"show_claimed_bonus_msg"`
-	Less             bool `json:"less"`
-	Debug            bool `json:"debug"`
-	DebugDeep        bool `json:"debug_deep"`
-	AnonymizeLogs    bool `json:"anonymize_logs"`
+	Save             bool            `json:"save"`
+	ConsoleLevel     int             `json:"console_level"`
+	FileLevel        int             `json:"file_level"`
+	Emoji            bool            `json:"emoji"`
+	Smart            bool            `json:"smart"`
+	ShowSeconds      bool            `json:"show_seconds"`
+	ConsoleUsername  bool            `json:"console_username"`
+	ShowClaimedBonus bool            `json:"show_claimed_bonus_msg"`
+	Less             bool            `json:"less"`
+	Debug            bool            `json:"debug"`
+	DebugDeep        bool            `json:"debug_deep"`
+	AnonymizeLogs    bool            `json:"anonymize_logs"`
 	Discord          DiscordSettings `json:"discord"`
 }
 
@@ -114,13 +114,15 @@ func (l *Logger) logEvent(level, emoji string, event constants.Event, format str
 	if emoji != "" && l.settings.Emoji {
 		message = fmt.Sprintf("%s %s", emojize(emoji), message)
 	}
-	if event != "" && l.discord != nil {
-		clean := ansiRegexp.ReplaceAllString(message, "")
-		l.discord.Send(clean, event)
-	}
 	if event != "" {
-		analyticsEmitEvent(event, message)
-		telegramEmitEvent(event, message)
+		// Console keeps the full line. Telegram, Discord and chart tooltips get
+		// a sentence instead of the raw log line.
+		presented := eventSentence(message)
+		if l.discord != nil {
+			l.discord.Send(presented, event)
+		}
+		analyticsEmitEvent(event, presented)
+		telegramEmitEvent(event, presented)
 	}
 	timestampFormat := "15:04 02/01/06"
 	if l.settings.ShowSeconds {

@@ -65,27 +65,21 @@ func newTelegramNotifier(settings TelegramSettings, apiBase string) *TelegramNot
 	}
 }
 
-// Send posts the message if the event is selected (an empty list selects every
-// event, matching the Discord webhook). Failures never interrupt the miner.
+// Send posts a short HTML summary if the event is selected. An empty events
+// list sends every event except the noisy ones (watch ticks, drop progress,
+// bet-filter skips); "*" or "ALL" sends those too. Failures never interrupt the miner.
 func (t *TelegramNotifier) Send(message string, event constants.Event) {
-	if t == nil || event == "" {
+	if t == nil || !wantsEvent(t.events, event) {
 		return
 	}
-	if len(t.events) > 0 {
-		if _, ok := t.events[event]; !ok {
-			return
-		}
-	}
-	text := strings.TrimSpace(message)
+	text := formatTelegram(event, message)
 	if text == "" {
 		return
-	}
-	if r := []rune(text); len(r) > telegramTextLimit {
-		text = string(r[:telegramTextLimit])
 	}
 	payload := url.Values{
 		"chat_id":              []string{t.chatID},
 		"text":                 []string{text},
+		"parse_mode":           []string{"HTML"},
 		"disable_notification": []string{strconv.FormatBool(t.disableNotification)},
 		"link_preview_options": []string{telegramNoPreviews},
 	}
