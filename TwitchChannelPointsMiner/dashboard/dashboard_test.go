@@ -2,10 +2,12 @@ package dashboard
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -255,5 +257,17 @@ func TestAPI(t *testing.T) {
 	}
 	if code := get("/", nil); code != 200 {
 		t.Fatalf("index status %d", code)
+	}
+	resp, err := http.Get(srv.URL + "/")
+	if err != nil {
+		t.Fatalf("GET /: %v", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	html := string(body)
+	for _, want := range []string{"Positive", "Negative", "Neutral", "📈", "📉", "🟢", "🔴", "⏫", "↩️"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("dashboard missing %q", want)
+		}
 	}
 }

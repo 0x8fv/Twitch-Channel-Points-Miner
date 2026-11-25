@@ -111,18 +111,18 @@ func (l *Logger) logEvent(level, emoji string, event constants.Event, format str
 		return
 	}
 	message := fmt.Sprintf(format, args...)
-	if emoji != "" && l.settings.Emoji {
-		message = fmt.Sprintf("%s %s", emojize(emoji), message)
-	}
 	if event != "" {
-		// Console keeps the full line. Telegram, Discord and chart tooltips get
-		// a sentence instead of the raw log line.
+		// Console keeps the full line, including its polarity glyph. Telegram,
+		// Discord and chart tooltips get a sentence built from the raw line.
 		presented := eventSentence(message)
 		if l.discord != nil {
 			l.discord.Send(presented, event)
 		}
 		analyticsEmitEvent(event, presented)
 		telegramEmitEvent(event, presented)
+	}
+	if glyph := emojiFor(emoji, event); glyph != "" && l.settings.Emoji {
+		message = fmt.Sprintf("%s %s", glyph, message)
 	}
 	timestampFormat := "15:04 02/01/06"
 	if l.settings.ShowSeconds {
@@ -212,4 +212,16 @@ func emojize(code string) string {
 		return val
 	}
 	return code
+}
+
+// emojiFor picks the canonical glyph of a known event. Caller shortcodes
+// (":rocket:", ":partying_face:") are only a fallback for lines with no event.
+func emojiFor(code string, event constants.Event) string {
+	if emoji, _, ok := constants.EventGlyph(event); ok {
+		return emoji
+	}
+	if code == "" {
+		return ""
+	}
+	return emojize(code)
 }

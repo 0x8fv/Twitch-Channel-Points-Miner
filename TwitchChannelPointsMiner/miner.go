@@ -1887,8 +1887,12 @@ func (m *Miner) logPointsDelta(streamer *entities.Streamer, delta int, reason st
 			reasonDisplay,
 		)
 	} else {
+		mark := "➕"
+		if sign == "-" {
+			mark = "➖"
+		}
 		m.logger.EmojiPrintf(
-			":rocket:",
+			mark,
 			"%s%s%d%s → %s (%s%s%s points) - Reason: %s",
 			valueColor,
 			sign,

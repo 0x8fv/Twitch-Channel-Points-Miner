@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/constants"
 )
 
 func TestSanitizeFilename(t *testing.T) {
@@ -49,5 +51,29 @@ func TestEmojize(t *testing.T) {
 	}
 	if got := emojize(":unknown:"); got != ":unknown:" {
 		t.Fatalf("unknown emoji should pass through, got %q", got)
+	}
+}
+
+func TestEmojiForUsesEventPolarity(t *testing.T) {
+	if got := emojiFor(":partying_face:", constants.EventStreamerOnline); got != "🟢" {
+		t.Fatalf("online glyph = %q", got)
+	}
+	if got := emojiFor(":sleeping:", constants.EventStreamerOffline); got != "🔴" {
+		t.Fatalf("offline glyph = %q", got)
+	}
+	if got := emojiFor(":bar_chart:", constants.EventBetWin); got != "📈" {
+		t.Fatalf("win glyph = %q", got)
+	}
+	if got := emojiFor(":bar_chart:", constants.EventBetLose); got != "📉" {
+		t.Fatalf("lose glyph = %q", got)
+	}
+	if got := emojiFor(":rocket:", constants.EventGainForWatchStreak); got != "⏫" {
+		t.Fatalf("streak glyph = %q", got)
+	}
+	if got := emojiFor(":rocket:", ""); got != "🚀" {
+		t.Fatalf("fallback glyph = %q", got)
+	}
+	if got := emojiFor("", ""); got != "" {
+		t.Fatalf("empty glyph = %q", got)
 	}
 }

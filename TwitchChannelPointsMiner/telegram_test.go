@@ -113,4 +113,14 @@ func TestLoggerForwardsEventsToTelegram(t *testing.T) {
 	if got.Get("text") != "<b>Online</b>\nAlice is online." {
 		t.Fatalf("event should arrive as a short HTML summary, got %q", got.Get("text"))
 	}
+
+	logger = NewLogger(LoggerSettings{Emoji: true}, "")
+	logger.EmojiEventf(":partying_face:", constants.EventStreamerOnline, "%sAlice%s is Online!", colorGreen, colorReset)
+	if got.Get("text") != "<b>Online</b>\nAlice is online." {
+		t.Fatalf("console emoji should stay off the notification, got %q", got.Get("text"))
+	}
+	logger.EmojiEventf(":bar_chart:", constants.EventBetLose, "EventPrediction: bob - overtime? - Decision: No - Result: %sLOSE%s, Gained: -500", colorRed, colorReset)
+	if got.Get("text") != "<b>Bet lost</b>\nbob lost 500 points on \"overtime?\" after choosing No." {
+		t.Fatalf("loss notification should stay a sentence, got %q", got.Get("text"))
+	}
 }
