@@ -470,7 +470,9 @@ func TestSendMinuteWatchedRequestsStreamSegments(t *testing.T) {
 	for _, status := range []int{http.StatusOK, http.StatusServiceUnavailable} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			var heads []string
+			logger := &stubPubSubLogger{}
 			twitch := &Twitch{
+				logger:         logger,
 				userAgent:      "fixture",
 				clientVersion:  constants.ClientVersion,
 				versionFetched: time.Now(),
@@ -501,9 +503,16 @@ func TestSendMinuteWatchedRequestsStreamSegments(t *testing.T) {
 			streamer := newTestStreamer(false)
 			streamer.Stream.Update("broadcast", "title", nil, nil, 0, time.Time{}, "")
 			streamer.Stream.SpadeURL = "https://spade.example/track"
-			err := twitch.SendMinuteWatched(streamer)
-			if (err != nil) != (status != http.StatusOK) {
+			// A failed segment request is logged and the minute-watch is still sent.
+			if err := twitch.SendMinuteWatched(streamer); err != nil {
 				t.Fatalf("watch error got %v for segment status %d", err, status)
+			}
+			wantErrors := 0
+			if status != http.StatusOK {
+				wantErrors = 1
+			}
+			if logger.errorCalls != wantErrors {
+				t.Fatalf("logged errors got %d, want %d for segment status %d", logger.errorCalls, wantErrors, status)
 			}
 			want := []string{"/media/one.ts", "/media/two.ts", "/media/three.ts"}
 			if status != http.StatusOK {
