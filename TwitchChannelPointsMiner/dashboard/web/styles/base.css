@@ -1,0 +1,11 @@
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/20px var(--sans); -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; transition: background-color .14s var(--ease), color .14s var(--ease); }
+:focus-visible { outline: 2px solid var(--line); outline-offset: 2px; }
+h1, h2, dl, dd, ul { margin: 0; padding: 0; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.up { color: var(--up); } .down { color: var(--down); }
+.lbl { font-size: 12px; line-height: 16px; color: var(--muted); }
+
+.app { display: grid; grid-template-columns: 264px minmax(0, 1fr); height: 100dvh; }

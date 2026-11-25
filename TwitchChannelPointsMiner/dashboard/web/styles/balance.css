@@ -1,0 +1,38 @@
+.main { min-width: 0; overflow-y: auto; }
+.wrap { max-width: 1440px; margin: 0 auto; padding: 0 32px 48px; }
+.bar { display: flex; align-items: center; gap: 12px; min-height: 56px; }
+.bar a { color: var(--ink); text-decoration: none; font-weight: 500; }
+.bar a[href]:hover { text-decoration: underline; text-underline-offset: 3px; }
+#d-state { display: inline-flex; align-items: center; gap: 8px; margin-right: auto; font-size: 13px; color: var(--muted); }
+.ranges { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--hair); border-radius: 8px; }
+.ranges button { height: 24px; padding: 0 12px; border-radius: 6px; font-size: 12px; color: var(--muted); }
+.ranges button:hover { color: var(--ink); }
+.ranges button[aria-pressed="true"] { background: var(--raised); color: var(--ink); }
+.hero { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 24px 32px; padding: 16px 0 24px; }
+#d-points { font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -.02em; }
+#d-delta { min-height: 20px; margin-top: 8px; font-size: 13px; color: var(--ink2); }
+.stats { display: flex; margin-left: auto; }
+.stats div { padding: 0 24px; border-left: 1px solid var(--hair); }
+.stats div:last-child { padding-right: 0; }
+.stats dd { margin-top: 4px; font-size: 16px; line-height: 24px; font-weight: 500; }
+.card { padding: 20px 20px 16px; background: var(--card); border: 1px solid var(--hair); border-radius: 12px; }
+.plot { position: relative; height: 400px; transition: opacity .16s var(--ease); }
+.plot.loading { opacity: .45; }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#ov { touch-action: pan-y; }
+#tip { position: absolute; left: 0; top: 0; z-index: 2; max-width: 336px; padding: 8px 12px; background: var(--card); border: 1px solid var(--hair); border-radius: 8px; box-shadow: var(--float); font-size: 12px; line-height: 16px; pointer-events: none; will-change: transform; }
+#tip .v { font-size: 14px; line-height: 20px; font-weight: 500; }
+#tip .t, #tip .more { color: var(--muted); }
+#tip .more { margin-top: 8px; }
+#tip .e { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--hair); }
+#tip .m { margin-top: 4px; color: var(--ink2); overflow-wrap: anywhere; }
+.tag { display: inline-flex; align-items: center; gap: 8px; }
+.tag svg { flex: none; }
+.legend { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--hair); font-size: 12px; line-height: 16px; }
+.legend:empty { display: none; }
+.lg { display: flex; flex-wrap: wrap; align-items: center; gap: 0 16px; }
+.lg .k { flex: none; width: 64px; }
+.legend button { display: inline-flex; align-items: center; gap: 8px; height: 24px; color: var(--ink2); }
+.legend button:hover { color: var(--ink); }
+.legend button[aria-pressed="false"] { opacity: .4; text-decoration: line-through; }
+.legend .num { color: var(--muted); }

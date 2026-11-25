@@ -11,28 +11,29 @@ import (
 	"time"
 
 	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/constants"
+	"TwitchChannelPointsMiner/TwitchChannelPointsMiner/notify"
 )
 
 type LoggerSettings struct {
-	Save             bool `json:"save"`
-	ConsoleLevel     int  `json:"console_level"`
-	FileLevel        int  `json:"file_level"`
-	Emoji            bool `json:"emoji"`
-	Smart            bool `json:"smart"`
-	ShowSeconds      bool `json:"show_seconds"`
-	ConsoleUsername  bool `json:"console_username"`
-	ShowClaimedBonus bool `json:"show_claimed_bonus_msg"`
-	Less             bool `json:"less"`
-	Debug            bool `json:"debug"`
-	DebugDeep        bool `json:"debug_deep"`
-	AnonymizeLogs    bool `json:"anonymize_logs"`
-	Discord          DiscordSettings `json:"discord"`
+	Save             bool                   `json:"save"`
+	ConsoleLevel     int                    `json:"console_level"`
+	FileLevel        int                    `json:"file_level"`
+	Emoji            bool                   `json:"emoji"`
+	Smart            bool                   `json:"smart"`
+	ShowSeconds      bool                   `json:"show_seconds"`
+	ConsoleUsername  bool                   `json:"console_username"`
+	ShowClaimedBonus bool                   `json:"show_claimed_bonus_msg"`
+	Less             bool                   `json:"less"`
+	Debug            bool                   `json:"debug"`
+	DebugDeep        bool                   `json:"debug_deep"`
+	AnonymizeLogs    bool                   `json:"anonymize_logs"`
+	Discord          notify.DiscordSettings `json:"discord"`
 }
 
 type Logger struct {
 	base     *log.Logger
 	settings LoggerSettings
-	discord  *DiscordWebhook
+	discord  *notify.DiscordWebhook
 }
 
 type dualWriter struct {
@@ -80,7 +81,7 @@ func NewLogger(settings LoggerSettings, username string) *Logger {
 	return &Logger{
 		base:     log.New(output, "", 0),
 		settings: settings,
-		discord:  NewDiscordWebhook(settings.Discord),
+		discord:  notify.NewDiscordWebhook(settings.Discord),
 	}
 }
 
@@ -111,12 +112,18 @@ func (l *Logger) logEvent(level, emoji string, event constants.Event, format str
 		return
 	}
 	message := fmt.Sprintf(format, args...)
-	if emoji != "" && l.settings.Emoji {
-		message = fmt.Sprintf("%s %s", emojize(emoji), message)
+	if event != "" {
+		// Console keeps the full line, including its polarity glyph. Telegram,
+		// Discord and chart tooltips get a sentence built from the raw line.
+		presented := notify.Sentence(message)
+		if l.discord != nil {
+			l.discord.Send(presented, event)
+		}
+		analyticsEmitEvent(event, presented)
+		telegramEmitEvent(event, presented)
 	}
-	if event != "" && l.discord != nil {
-		clean := ansiRegexp.ReplaceAllString(message, "")
-		l.discord.Send(clean, event)
+	if glyph := emojiFor(emoji, event); glyph != "" && l.settings.Emoji {
+		message = fmt.Sprintf("%s %s", glyph, message)
 	}
 	timestampFormat := "15:04 02/01/06"
 	if l.settings.ShowSeconds {
@@ -206,4 +213,16 @@ func emojize(code string) string {
 		return val
 	}
 	return code
+}
+
+// emojiFor picks the canonical glyph of a known event. Caller shortcodes
+// (":rocket:", ":partying_face:") are only a fallback for lines with no event.
+func emojiFor(code string, event constants.Event) string {
+	if emoji, _, ok := constants.EventGlyph(event); ok {
+		return emoji
+	}
+	if code == "" {
+		return ""
+	}
+	return emojize(code)
 }
