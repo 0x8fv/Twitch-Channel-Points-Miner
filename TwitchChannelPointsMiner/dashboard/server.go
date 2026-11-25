@@ -1,16 +1,53 @@
 package dashboard
 
 import (
+	"bytes"
+	"compress/gzip"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
+	"strings"
+	"sync"
 	"time"
 )
 
 //go:embed index.html
 var indexHTML []byte
+
+// The page never changes while the process runs, so it is compressed once and
+// revalidated by ETag: a reload costs a 304 instead of the whole document.
+var (
+	indexGzip = gzipBytes(indexHTML, gzip.BestCompression)
+	indexETag = func() string {
+		sum := sha256.Sum256(indexHTML)
+		return `"` + hex.EncodeToString(sum[:8]) + `"`
+	}()
+)
+
+// Bodies below this size are not worth compressing.
+const gzipMinBytes = 1024
+
+var gzipPool = sync.Pool{New: func() interface{} {
+	w, _ := gzip.NewWriterLevel(io.Discard, gzip.BestSpeed)
+	return w
+}}
+
+func gzipBytes(data []byte, level int) []byte {
+	var buf bytes.Buffer
+	w, _ := gzip.NewWriterLevel(&buf, level)
+	_, _ = w.Write(data)
+	_ = w.Close()
+	return buf.Bytes()
+}
+
+func acceptsGzip(r *http.Request) bool {
+	return strings.Contains(r.Header.Get("Accept-Encoding"), "gzip")
+}
 
 // maxEvents caps the markers sent per request (the most recent are kept).
 const maxEvents = 2000
@@ -24,6 +61,21 @@ var ranges = map[string]time.Duration{
 
 // Gains shown as chart markers, derived from recorded point reasons.
 var markerReasons = map[string]bool{"WATCH_STREAK": true, "CLAIM": true, "RAID": true}
+
+func pointsSentence(delta int) string {
+	n := delta
+	if n < 0 {
+		n = -n
+	}
+	switch {
+	case delta < 0:
+		return fmt.Sprintf("Lost %d points.", n)
+	case delta == 0:
+		return "Points did not change."
+	default:
+		return fmt.Sprintf("Gained %d points.", n)
+	}
+}
 
 // Server serves the dashboard UI and its JSON API.
 type Server struct {
@@ -54,16 +106,44 @@ func (s *Server) ListenAndServe(addr string) error {
 	return srv.ListenAndServe()
 }
 
-func (s *Server) handleIndex(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
+func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
+	h := w.Header()
+	h.Set("Content-Type", "text/html; charset=utf-8")
+	h.Set("Cache-Control", "no-cache")
+	h.Set("ETag", indexETag)
+	h.Set("Vary", "Accept-Encoding")
+	if strings.Contains(r.Header.Get("If-None-Match"), indexETag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	if acceptsGzip(r) {
+		h.Set("Content-Encoding", "gzip")
+		_, _ = w.Write(indexGzip)
+		return
+	}
 	_, _ = w.Write(indexHTML)
 }
 
-func writeJSON(w http.ResponseWriter, v interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
-	_ = json.NewEncoder(w).Encode(v)
+func writeJSON(w http.ResponseWriter, r *http.Request, v interface{}) {
+	body, err := json.Marshal(v)
+	if err != nil {
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", "application/json")
+	h.Set("Cache-Control", "no-store")
+	h.Set("Vary", "Accept-Encoding")
+	if len(body) < gzipMinBytes || !acceptsGzip(r) {
+		_, _ = w.Write(body)
+		return
+	}
+	h.Set("Content-Encoding", "gzip")
+	gz := gzipPool.Get().(*gzip.Writer)
+	gz.Reset(w)
+	_, _ = gz.Write(body)
+	_ = gz.Close()
+	gzipPool.Put(gz)
 }
 
 type totals struct {
@@ -73,7 +153,7 @@ type totals struct {
 	Count       int `json:"count"`
 }
 
-func (s *Server) handleStreamers(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleStreamers(w http.ResponseWriter, r *http.Request) {
 	list := s.store.Streamers()
 	t := totals{Count: len(list)}
 	for _, st := range list {
@@ -83,7 +163,7 @@ func (s *Server) handleStreamers(w http.ResponseWriter, _ *http.Request) {
 			t.Online++
 		}
 	}
-	writeJSON(w, map[string]interface{}{
+	writeJSON(w, r, map[string]interface{}{
 		"now":       s.store.now().UnixMilli(),
 		"totals":    t,
 		"streamers": list,
@@ -142,7 +222,7 @@ func (s *Server) handleStreamer(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, p := range points {
 		if markerReasons[p.R] {
-			events = append(events, Event{T: p.T, Type: p.R, Msg: fmt.Sprintf("%+d points", p.D)})
+			events = append(events, Event{T: p.T, Type: p.R, Msg: pointsSentence(p.D)})
 		}
 	}
 	sort.SliceStable(events, func(i, j int) bool { return events[i].T < events[j].T })
@@ -183,5 +263,5 @@ func (s *Server) handleStreamer(w http.ResponseWriter, r *http.Request) {
 	for i, p := range sampled {
 		resp.Series[i] = [2]int64{p.T, int64(p.P)}
 	}
-	writeJSON(w, resp)
+	writeJSON(w, r, resp)
 }

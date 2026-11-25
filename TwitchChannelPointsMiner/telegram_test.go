@@ -47,12 +47,41 @@ func TestTelegramNotifierSendsSelectedEvents(t *testing.T) {
 		t.Fatalf("unexpected request %q", paths[0])
 	}
 	first := forms[0]
-	if first.Get("chat_id") != "123456789" || first.Get("text") != "Alice is Online!" ||
-		first.Get("disable_notification") != "true" || first.Get("link_preview_options") != `{"is_disabled":true}` {
+	if first.Get("chat_id") != "123456789" || first.Get("text") != "🟢 <b>Online</b>\nAlice is online." ||
+		first.Get("parse_mode") != "HTML" || first.Get("disable_notification") != "true" ||
+		first.Get("link_preview_options") != `{"is_disabled":true}` {
 		t.Fatalf("unexpected form %v", first)
 	}
-	if got := len([]rune(forms[1].Get("text"))); got != telegramTextLimit {
-		t.Fatalf("long text should be cut to %d characters, got %d", telegramTextLimit, got)
+	long := forms[1].Get("text")
+	if !strings.HasPrefix(long, "📉 <b>Bet lost</b>\n") {
+		t.Fatalf("long text missing title: %q", long[:40])
+	}
+	if got := len([]rune(long)); got > telegramTextLimit {
+		t.Fatalf("long text should be at most %d characters, got %d", telegramTextLimit, got)
+	}
+}
+
+func TestTelegramNotifierSkipsQuietEventsUnlessNamed(t *testing.T) {
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		got = append(got, r.PostForm.Get("text"))
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	open := newTelegramNotifier(TelegramSettings{ChatID: "1", Token: "t"}, srv.URL)
+	open.Send("tick", constants.EventGainForWatch)
+	open.Send("Alice (1.2k points) is Online!", constants.EventStreamerOnline)
+	if len(got) != 1 || !strings.Contains(got[0], "Alice") {
+		t.Fatalf("empty events list should skip watch ticks and send online, got %v", got)
+	}
+
+	got = nil
+	all := newTelegramNotifier(TelegramSettings{ChatID: "1", Token: "t", Events: []string{"*"}}, srv.URL)
+	all.Send("tick", constants.EventGainForWatch)
+	if len(got) != 1 || !strings.HasPrefix(got[0], "➕ <b>Watch</b>") {
+		t.Fatalf("* should opt into watch ticks, got %v", got)
 	}
 }
 
@@ -81,7 +110,17 @@ func TestLoggerForwardsEventsToTelegram(t *testing.T) {
 		t.Fatalf("non-event log line was sent: %v", got)
 	}
 	logger.Eventf(constants.EventStreamerOnline, "%sAlice%s is Online!", colorGreen, colorReset)
-	if got.Get("text") != "Alice is Online!" {
-		t.Fatalf("event should arrive ANSI-stripped, got %q", got.Get("text"))
+	if got.Get("text") != "🟢 <b>Online</b>\nAlice is online." {
+		t.Fatalf("event should arrive as a short HTML summary, got %q", got.Get("text"))
+	}
+
+	logger = NewLogger(LoggerSettings{Emoji: true}, "")
+	logger.EmojiEventf(":partying_face:", constants.EventStreamerOnline, "%sAlice%s is Online!", colorGreen, colorReset)
+	if got.Get("text") != "🟢 <b>Online</b>\nAlice is online." {
+		t.Fatalf("notification should use the polarity glyph, not the console shortcode, got %q", got.Get("text"))
+	}
+	logger.EmojiEventf(":bar_chart:", constants.EventBetLose, "EventPrediction: bob - overtime? - Decision: No - Result: %sLOSE%s, Gained: -500", colorRed, colorReset)
+	if got.Get("text") != "📉 <b>Bet lost</b>\nbob lost 500 points on \"overtime?\" after choosing No." {
+		t.Fatalf("loss notification should stay a sentence, got %q", got.Get("text"))
 	}
 }
