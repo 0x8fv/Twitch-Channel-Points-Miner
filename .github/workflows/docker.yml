@@ -1,8 +1,9 @@
 name: docker
 
-# Keeps the fork in sync with upstream and publishes the image to GHCR.
+# Publishes the image to GHCR. In a fork it also keeps main in sync with upstream.
 #   push to main      -> build
-#   schedule/dispatch -> sync with upstream, then build in the same run
+#   schedule/dispatch -> in a fork: sync with upstream, then build in the same run
+#                        elsewhere: build only (skipped when the image already exists)
 #                        (pushes made with GITHUB_TOKEN do not trigger workflows)
 on:
   push:
@@ -27,7 +28,7 @@ concurrency:
 jobs:
   sync:
     name: Sync with upstream
-    if: github.event_name != 'push'
+    if: github.event_name != 'push' && github.event.repository.fork
     runs-on: ubuntu-latest
     steps:
       - name: Merge upstream into main

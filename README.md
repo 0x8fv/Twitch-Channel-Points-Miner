@@ -113,7 +113,7 @@ A small built-in web dashboard (no external assets) shows every streamer's balan
 - JSON API: `GET /api/streamers` and `GET /api/streamer/{name}?range=24h|7d|30d|all`.
 
 ## Docker
-A multi-arch image (`linux/amd64`, `linux/arm64`) is published to GHCR on every change to `main`; a daily workflow first merges upstream into the fork. Replace `OWNER` with the lowercase GitHub account that owns the fork.
+A multi-arch image (`linux/amd64`, `linux/arm64`) is published to GHCR on every change to `main`. In a fork, a daily run of the same workflow first merges upstream into it. Replace `OWNER` with the lowercase GitHub account that owns the repository.
 
 ```sh
 docker run -d --name twitch-miner --restart unless-stopped \
