@@ -100,7 +100,7 @@ h1, h2, dl, dd, ul { margin: 0; padding: 0; }
 .stats div:last-child { padding-right: 0; }
 .stats dd { margin-top: 4px; font-size: 16px; line-height: 24px; font-weight: 500; }
 .card { padding: 20px 20px 16px; background: var(--card); border: 1px solid var(--hair); border-radius: 12px; }
-.plot { position: relative; height: 340px; transition: opacity .16s var(--ease); }
+.plot { position: relative; height: 400px; transition: opacity .16s var(--ease); }
 .plot.loading { opacity: .45; }
 canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 #ov { touch-action: pan-y; }
@@ -144,7 +144,7 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
   .stats div { flex: 1; padding: 0 12px; }
   .stats div:first-child { padding-left: 0; border-left: 0; }
   .card { padding: 16px 12px 12px; }
-  .plot { height: 280px; }
+  .plot { height: 320px; }
   #log .ev { grid-template-columns: 72px minmax(0, 1fr); gap: 4px 12px; }
   #log .m { grid-column: 2; }
 }
@@ -224,7 +224,7 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 <script>
 'use strict';
 const REFRESH_MS = 45000, PREFETCH_MAX_AGE = 15000, LOG_PAGE = 100;
-// Marker glyphs in unit coordinates; the same path draws on the canvas and in the legend.
+// Event glyphs in unit coordinates, used by the legend, the tooltip and the activity list.
 const GLYPH = {
   dot:     { d: 'M1,0A1,1 0 1,1 -1,0A1,1 0 1,1 1,0Z' },
   square:  { d: 'M-.9,-.9H.9V.9H-.9Z' },
@@ -236,7 +236,7 @@ const GLYPH = {
   cross:   { d: 'M-1,-1L1,1M1,-1L-1,1', line: true },
   bar:     { d: 'M-1.2,0H1.2', line: true },
 };
-// tone is the polarity from constants.EventPolarity: pos, neg, neu. A marker's shape
+// tone is the polarity from constants.EventPolarity: pos, neg, neu. A glyph's shape
 // names the event and its colour names the polarity; the accent stays with the line.
 const EV = {
   WATCH_STREAK:     { label: 'Watch streak', glyph: 'dot',     tone: 'pos' },
@@ -266,7 +266,7 @@ const state = {
   streamers: [], totals: null, sel: safeHash() || store.get('sel', '') || null,
   range: store.get('range', '24h'), sort: store.get('sort', 'points'), q: '',
   hidden: safeSet(store.get('hidden', '[]')),
-  data: null, marks: [], hover: null, logN: LOG_PAGE,
+  data: null, hover: null, logN: LOG_PAGE,
 };
 if (!RANGE_LONG[state.range]) state.range = '24h';
 if (!['points', 'gain', 'name'].includes(state.sort)) state.sort = 'points';
@@ -300,8 +300,8 @@ let C = null;
 function colors() {
   if (C) return C;
   const cs = getComputedStyle(root);
-  C = { font: '11px ' + cs.getPropertyValue('--mono').trim() };
-  for (const k of ['card', 'ink', 'muted', 'grid', 'line', 'wash', 'up', 'down', 'neu']) C[k] = cs.getPropertyValue('--' + k).trim();
+  C = { font: '12px ' + cs.getPropertyValue('--mono').trim() };
+  for (const k of ['card', 'ink2', 'muted', 'grid', 'hover', 'line', 'wash', 'up', 'down', 'neu']) C[k] = cs.getPropertyValue('--' + k).trim();
   return C;
 }
 function setTheme(t) {
@@ -536,8 +536,6 @@ $('more').onclick = () => { state.logN += LOG_PAGE * 2; renderLog(); };
 /* ---------- chart ---------- */
 const plot = $('plot'), cv = $('cv'), ov = $('ov'), tip = $('tip');
 const ctx = cv.getContext('2d'), octx = ov.getContext('2d');
-const PATH = {};
-for (const k in GLYPH) PATH[k] = new Path2D(GLYPH[k].d);
 let geo = null, W = 0, H = 0, DPR = 1;
 function fit() {
   W = plot.clientWidth; H = plot.clientHeight; DPR = window.devicePixelRatio || 1;
@@ -571,12 +569,6 @@ function timeTicks(from, to, maxCount) {
 function timeLabel(t, step) {
   const d = new Date(t);
   return step >= DAY || (d.getHours() === 0 && d.getMinutes() === 0) ? dfDay.format(d) : dfTime.format(d);
-}
-function valueAt(series, t) {
-  let lo = 0, hi = series.length - 1;
-  if (!series.length || t < series[0][0]) return null;
-  while (lo < hi) { const mid = (lo + hi + 1) >> 1; series[mid][0] <= t ? lo = mid : hi = mid - 1; }
-  return series[lo][1];
 }
 function stripEmoji(s) {
   return String(s || '').replace(/^(?:\p{Extended_Pictographic}\uFE0F?(?:\u200D\p{Extended_Pictographic}\uFE0F?)*)+\s+/u, '');
@@ -685,31 +677,33 @@ function sampleAt(series, t) {
   while (lo < hi) { const mid = (lo + hi + 1) >> 1; series[mid][0] <= t ? lo = mid : hi = mid - 1; }
   return { value: series[lo][1], prev: lo > 0 ? series[lo - 1][1] : null };
 }
-// The base canvas holds grid, line and markers and is redrawn only when data, size or
-// theme change. Pointer movement repaints the small overlay canvas alone.
+// The balance line has the plot to itself. Events sit in a lane underneath, counted per
+// time slot: positive and neutral ones rise from the baseline, negative ones hang below.
+const LANE_UP = 28, LANE_DOWN = 14, SLOT = 8;
+// The base canvas is redrawn only when data, size or theme change. Pointer movement
+// repaints the small overlay canvas alone.
 function draw() {
   if (!fit()) return;
   const c = colors(), d = state.data;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, W, H);
   ctx.font = c.font;
-  state.marks = []; geo = null;
+  geo = null;
   if (!d || !d.series.length) {
     ctx.fillStyle = c.muted; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(d ? 'No data in this range yet' : '', W / 2, H / 2);
     drawHover();
     return;
   }
-  const S = d.series, y0 = 8, y1 = H - 28;
+  const S = d.series, y0 = 8, base = H - 28 - LANE_DOWN, y1 = base - LANE_UP - 20;
   const pad = Math.max(1, (d.stats.max - d.stats.min) * 0.12);
   const yt = niceTicks(d.stats.min - pad, d.stats.max + pad, 4), yf = axisFormat(yt);
   const lo = yt[0], hi = yt[yt.length - 1];
-  const x0 = Math.ceil(Math.max(...yt.map(v => ctx.measureText(yf(v)).width))) + 12, x1 = W - 8;
+  const x0 = Math.ceil(Math.max(ctx.measureText('Events').width, ...yt.map(v => ctx.measureText(yf(v)).width))) + 12, x1 = W - 8;
   const span = Math.max(1, d.to - d.from);
   const X = t => x0 + (t - d.from) / span * (x1 - x0), Y = v => y1 - (v - lo) / (hi - lo) * (y1 - y0);
-  geo = { X, Y, x0, x1, y0, y1, d };
 
-  ctx.lineWidth = 1; ctx.strokeStyle = c.grid; ctx.fillStyle = c.muted;
+  ctx.lineWidth = 1; ctx.strokeStyle = c.grid; ctx.fillStyle = c.ink2;
   ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
   ctx.beginPath();
   for (const v of yt) {
@@ -717,12 +711,15 @@ function draw() {
     ctx.moveTo(x0, y); ctx.lineTo(x1, y);
     ctx.fillText(yf(v), x0 - 12, y);
   }
+  ctx.moveTo(x0, base + .5); ctx.lineTo(x1, base + .5);
   ctx.stroke();
+  ctx.fillStyle = c.muted;
+  ctx.fillText('Events', x0 - 12, base);
   const tt = timeTicks(d.from, d.to, Math.max(2, Math.floor((x1 - x0) / 130)));
-  ctx.textBaseline = 'top'; ctx.textAlign = 'center';
+  ctx.fillStyle = c.ink2; ctx.textBaseline = 'top'; ctx.textAlign = 'center';
   for (const t of tt.t) {
     const x = X(t);
-    if (x >= x0 + 24 && x <= x1 - 24) ctx.fillText(timeLabel(t, tt.step), x, y1 + 12);
+    if (x >= x0 + 24 && x <= x1 - 24) ctx.fillText(timeLabel(t, tt.step), x, base + LANE_DOWN + 10);
   }
 
   // Step line: a balance holds until the next sample.
@@ -731,69 +728,54 @@ function draw() {
   ctx.moveTo(X(S[0][0]), Y(S[0][1]));
   for (let i = 1; i < S.length; i++) { const x = X(S[i][0]); ctx.lineTo(x, Y(S[i - 1][1])); ctx.lineTo(x, Y(S[i][1])); }
   ctx.lineTo(x1, lastY);
-  ctx.strokeStyle = c.line; ctx.lineWidth = 1.75; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke();
+  ctx.strokeStyle = c.line; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.stroke();
   ctx.lineTo(x1, y1); ctx.lineTo(X(S[0][0]), y1); ctx.closePath();
   ctx.fillStyle = c.wash; ctx.fill();
-
-  // Event markers sit on the line.
-  const shown = shownEvents(d), dense = shown.length > 200, r = dense ? 2.25 : 3.5;
-  ctx.lineCap = 'round';
-  for (const e of shown) {
-    const m = { x: X(e.t), y: Y(valueAt(S, e.t) ?? S[0][1]), e };
-    state.marks.push(m);
-    const k = EV[e.type], g = GLYPH[k.glyph], p = PATH[k.glyph], s = r * (k.scale || 1);
-    ctx.setTransform(DPR * s, 0, 0, DPR * s, DPR * m.x, DPR * m.y);
-    if (g.line) {
-      if (g.open) { ctx.fillStyle = c.card; ctx.fill(p); }
-      ctx.strokeStyle = c[TONE_COLOR[k.tone]]; ctx.lineWidth = 1.5 / s; ctx.stroke(p);
-    } else {
-      if (!dense) { ctx.strokeStyle = c.card; ctx.lineWidth = 2 / s; ctx.stroke(p); }
-      ctx.fillStyle = c[TONE_COLOR[k.tone]]; ctx.fill(p);
-    }
-  }
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   // The current balance, where the line ends.
-  ctx.beginPath(); ctx.arc(x1, lastY, 3, 0, Math.PI * 2);
+  ctx.beginPath(); ctx.arc(x1, lastY, 3.5, 0, Math.PI * 2);
   ctx.fillStyle = c.line; ctx.fill(); ctx.strokeStyle = c.card; ctx.lineWidth = 2; ctx.stroke();
-  drawHover();
-}
-function nearestMark(hx, hy) {
-  // Marks are in time order, so only the few within reach of the pointer are tested.
-  const M = state.marks, reach = 14;
-  let lo = 0, hi = M.length;
-  while (lo < hi) { const mid = (lo + hi) >> 1; M[mid].x < hx - reach ? lo = mid + 1 : hi = mid; }
-  let near = null, best = reach * reach;
-  for (let i = lo; i < M.length && M[i].x <= hx + reach; i++) {
-    const dist = (M[i].x - hx) ** 2 + (M[i].y - hy) ** 2;
-    if (dist <= best) { best = dist; near = M[i]; }
+
+  // Event lane.
+  const n = Math.max(1, Math.floor((x1 - x0) / SLOT)), sw = (x1 - x0) / n, slots = new Array(n).fill(null);
+  for (const e of shownEvents(d)) {
+    const i = Math.min(n - 1, Math.max(0, Math.floor((X(e.t) - x0) / sw)));
+    const slot = slots[i] || (slots[i] = { pos: 0, neu: 0, neg: 0, ev: [] });
+    slot[EV[e.type].tone]++; slot.ev.push(e);
   }
-  return near;
+  let up = 0, down = 0;
+  for (const q of slots) if (q) { up = Math.max(up, q.pos + q.neu); down = Math.max(down, q.neg); }
+  const unit = Math.min(6, up ? LANE_UP / up : 6, down ? LANE_DOWN / down : 6);
+  const tall = k => k ? Math.max(2, Math.round(k * unit)) : 0;
+  for (let i = 0; i < n; i++) {
+    const q = slots[i];
+    if (!q) continue;
+    const x = Math.round(x0 + i * sw) + 1, w = Math.max(2, Math.round(sw) - 2);
+    const hp = tall(q.pos), hn = tall(q.neu), hd = tall(q.neg);
+    if (hp) { ctx.fillStyle = c.up; ctx.fillRect(x, base - hp, w, hp); }
+    if (hn) { ctx.fillStyle = c.neu; ctx.fillRect(x, base - hp - hn, w, hn); }
+    if (hd) { ctx.fillStyle = c.down; ctx.fillRect(x, base + 1, w, hd); }
+  }
+  geo = { Y, x0, x1, y0, y1, base, d, slots, sw };
+  drawHover();
 }
 function drawHover() {
   octx.setTransform(DPR, 0, 0, DPR, 0, 0);
   octx.clearRect(0, 0, W, H);
   const hv = state.hover;
   if (!hv || !geo) { tip.hidden = true; return; }
-  const c = colors(), { Y, x0, x1, y0, y1, d } = geo;
-  const near = nearestMark(hv.x, hv.y);
-  // Events that land on the same pixel column share one tooltip, newest six shown.
-  let shown = [], extra = 0;
-  if (near) {
-    const col = state.marks.filter(m => Math.abs(m.x - near.x) <= 2);
-    extra = Math.max(0, col.length - 6);
-    shown = col.slice(-6);
-  }
-  const px = near ? near.x : Math.min(x1, Math.max(x0, hv.x));
-  const t = near ? near.e.t : d.from + (px - x0) / (x1 - x0) * (d.to - d.from);
+  const c = colors(), { Y, x0, x1, y0, base, d, slots, sw } = geo;
+  const px = Math.min(x1, Math.max(x0, hv.x));
+  const t = d.from + (px - x0) / (x1 - x0) * (d.to - d.from);
   const sample = sampleAt(d.series, t), v = sample ? sample.value : null;
-  octx.strokeStyle = c.muted; octx.lineWidth = 1; octx.globalAlpha = .5;
-  octx.beginPath(); octx.moveTo(Math.round(px) + .5, y0); octx.lineTo(Math.round(px) + .5, y1); octx.stroke();
+  const i = Math.min(slots.length - 1, Math.floor((px - x0) / sw)), slot = slots[i];
+  // Every event of the hovered time slot shares the tooltip, newest six shown.
+  const shown = slot ? slot.ev.slice(-6) : [], extra = slot ? slot.ev.length - shown.length : 0;
+  if (slot) { octx.fillStyle = c.hover; octx.fillRect(Math.round(x0 + i * sw), base - LANE_UP - 4, Math.round(sw), LANE_UP + LANE_DOWN + 8); }
+  octx.strokeStyle = c.muted; octx.lineWidth = 1; octx.globalAlpha = .6;
+  octx.beginPath(); octx.moveTo(Math.round(px) + .5, y0); octx.lineTo(Math.round(px) + .5, base + LANE_DOWN); octx.stroke();
   octx.globalAlpha = 1;
-  if (near) {
-    octx.strokeStyle = c.ink; octx.lineWidth = 1;
-    for (const m of shown) { octx.beginPath(); octx.arc(m.x, m.y, 7, 0, Math.PI * 2); octx.stroke(); }
-  } else if (v !== null) {
-    octx.beginPath(); octx.arc(px, Y(v), 4, 0, Math.PI * 2);
+  if (v !== null) {
+    octx.beginPath(); octx.arc(px, Y(v), 4.5, 0, Math.PI * 2);
     octx.fillStyle = c.line; octx.fill(); octx.strokeStyle = c.card; octx.lineWidth = 2; octx.stroke();
   }
   const kids = [el('div', { className: 'v num', textContent: v === null ? 'No data' : fmt(v) })];
@@ -801,20 +783,18 @@ function drawHover() {
     kids.push(el('div', null, el('span', { className: 'num ' + cls(v - sample.prev), textContent: signed(v - sample.prev) }), ' vs previous sample'));
   }
   kids.push(el('div', { className: 't num', textContent: dfTip.format(new Date(t)) }));
-  const sameMinute = shown.every(m => Math.abs(m.e.t - shown[0].e.t) < 60000);
-  for (const m of shown) {
-    const head = tag(m.e.type), msg = eventSentence(m.e.msg);
-    if (!sameMinute) head.append(' at ' + dfTime.format(new Date(m.e.t)));
+  for (const e of shown) {
+    const head = tag(e.type), msg = eventSentence(e.msg);
+    head.append(el('span', { className: 't num', textContent: dfTime.format(new Date(e.t)) }));
     kids.push(el('div', { className: 'e' }, head, ...(msg ? [el('div', { className: 'm', textContent: msg })] : [])));
   }
-  if (extra) kids.push(el('div', { className: 'more', textContent: fmt(extra) + (extra === 1 ? ' earlier event' : ' earlier events') + ' on this point' }));
+  if (extra) kids.push(el('div', { className: 'more', textContent: fmt(extra) + (extra === 1 ? ' earlier event' : ' earlier events') + ' in this slot' }));
   tip.replaceChildren(...kids);
   tip.hidden = false;
   const tw = tip.offsetWidth, th = tip.offsetHeight;
   let left = px + 12; if (left + tw > W - 4) left = px - tw - 12;
-  const anchorY = near ? near.y : hv.y;
-  let top = anchorY - th - 12;
-  if (top < 4) top = Math.min(H - th - 4, anchorY + 14);
+  let top = hv.y - th - 12;
+  if (top < 4) top = Math.min(H - th - 4, hv.y + 14);
   tip.style.transform = `translate(${Math.round(Math.max(4, left))}px,${Math.round(Math.max(4, top))}px)`;
 }
 let raf = 0, rafFull = false;
