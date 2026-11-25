@@ -27,7 +27,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     env:
-      BUDGET_SECONDS: 45
+      # Measured: 18 seconds on a cold cache.
+      BUDGET_SECONDS: 30
     steps:
       - name: Start the clock
         run: echo "JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
@@ -63,7 +64,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     env:
-      BUDGET_SECONDS: 75
+      # Measured: 40 seconds on a cold cache, race detector on, both passes.
+      BUDGET_SECONDS: 60
       # Everything except a pull request runs the whole suite from scratch.
       CHECK_FULL: ${{ github.event_name != 'pull_request' && '1' || '' }}
     steps:
@@ -113,6 +115,7 @@ jobs:
         # Keep in step with RELEASE_TARGETS in ci/check.sh.
         target: [windows/amd64, linux/amd64, linux/arm64, darwin/amd64, darwin/arm64]
     env:
+      # Measured: 29 seconds for the slowest platform on a cold cache.
       BUDGET_SECONDS: 45
     steps:
       - name: Start the clock
