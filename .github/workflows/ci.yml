@@ -1,0 +1,134 @@
+name: ci
+
+# Three jobs, none waiting on another. Pull requests reuse Go's test cache from
+# main, so only packages a change can reach are run again. Pushes to main and
+# merge-queue runs execute every test from scratch, in random order.
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A newer commit on the same branch replaces the run in progress.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.26.x"
+
+jobs:
+  lint:
+    name: Format, vet, tidy
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      BUDGET_SECONDS: 45
+    steps:
+      - name: Start the clock
+        run: echo "JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-lint-${{ runner.os }}-${{ github.sha }}
+          restore-keys: go-lint-${{ runner.os }}-
+      - name: gofmt, go vet, go mod tidy
+        run: sh ci/check.sh lint
+      - uses: actions/cache/save@v4
+        if: github.ref == 'refs/heads/main'
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-lint-${{ runner.os }}-${{ github.sha }}
+      - name: Budget
+        if: always()
+        run: sh ci/budget.sh
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      BUDGET_SECONDS: 60
+      # Everything except a pull request runs the whole suite from scratch.
+      CHECK_FULL: ${{ github.event_name != 'pull_request' && '1' || '' }}
+    steps:
+      - name: Start the clock
+        run: echo "JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-test-${{ runner.os }}-${{ github.sha }}
+          restore-keys: go-test-${{ runner.os }}-
+      - name: go test
+        run: sh ci/check.sh test
+      # Only main writes the cache, so a pull request cannot seed it with results
+      # from code that never merged.
+      - uses: actions/cache/save@v4
+        if: github.ref == 'refs/heads/main'
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-test-${{ runner.os }}-${{ github.sha }}
+      - name: Budget
+        if: always()
+        run: sh ci/budget.sh
+
+  build:
+    name: Build every platform
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      BUDGET_SECONDS: 60
+    steps:
+      - name: Start the clock
+        run: echo "JOB_STARTED=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-build-${{ runner.os }}-${{ github.sha }}
+          restore-keys: go-build-${{ runner.os }}-
+      - name: go build
+        run: sh ci/check.sh build
+      - uses: actions/cache/save@v4
+        if: github.ref == 'refs/heads/main'
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-build-${{ runner.os }}-${{ github.sha }}
+      - name: Budget
+        if: always()
+        run: sh ci/budget.sh
