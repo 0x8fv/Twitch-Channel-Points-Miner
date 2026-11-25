@@ -1,0 +1,11 @@
+.git
+.github
+.idea
+.vscode
+dist
+assets
+log
+cookies
+config.json
+.env
+*.md

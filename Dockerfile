@@ -1,53 +1,51 @@
-# Build: docker buildx build . -t tcpm:latest
+# Build: docker buildx build --platform linux/amd64,linux/arm64 -t tcpm:latest .
 
-# 2 stage Dockerfile; a compile stage and a runner stage.
-# this works because the current repo produces a static binary that doesnt
-# need any libraries & isn't dependent on any native system toolsy
+# Two-stage build: a compile stage and a minimal runner stage.
+# The miner is a static Go binary, so the final image needs only the binary,
+# CA certificates and a writable data directory.
 
-# heavy builder stage; this stage can be bloated, its only needed for the 
-FROM debian:trixie-20261005 AS builder
+# Build stage. It runs on the build platform's native architecture and
+# cross-compiles for the target, which keeps multi-arch builds fast.
+FROM --platform=$BUILDPLATFORM golang:1.22-alpine AS builder
 
-RUN mkdir -p /data/build /data/dist
+RUN mkdir -p /data/build /data/dist/data_folder/cookies && \
+  chmod 700 /data/dist/data_folder /data/dist/data_folder/cookies
 WORKDIR /data/build
 
-# prepare data dir for scratch container with correct permissions
-RUN mkdir /data/dist/data_folder && \
-  chown 10001:10001 /data/dist/data_folder && \
-  chmod 600 /data/dist/data_folder
+# ca-certificates are copied into the scratch runner stage below.
+# hadolint ignore=DL3018
+RUN apk add --no-cache ca-certificates
 
-# install build dependencies & updating CA certificates
-RUN apt update && \
-  apt upgrade -y && \
-  apt install -y --no-install-recommends \
-  golang \
-  ca-certificates && \
-  update-ca-certificates && \
-  rm -rf /var/lib/apt/lists/*
+COPY go.mod go.sum ./
+RUN go mod download
 
-COPY ./go.mod ./go.sum ./main.go /data/build/
-COPY ./TwitchChannelPointsMiner/ /data/build/TwitchChannelPointsMiner
+COPY main.go ./
+COPY TwitchChannelPointsMiner/ ./TwitchChannelPointsMiner/
 
-RUN CGO_ENABLED=0 go build \
-  -trimpath -buildvcs=false -ldflags="-s -w" \
-  -o "/data/dist/TwitchChannelPointsMiner" \
-  "/data/build"
+ARG TARGETOS TARGETARCH
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+  go build -trimpath -buildvcs=false -ldflags="-s -w" \
+  -o /data/dist/TwitchChannelPointsMiner .
 
-
-# runner stage; completely blank -> extremely small & lightweight docker image!
-FROM scratch AS runner 
+# Runner stage; completely blank -> extremely small & lightweight image.
+# scratch has no shell, package manager or user database, so the runtime user
+# is a numeric UID/GID and every persistent path must be copied in.
+FROM scratch AS runner
 
 # copy the built binary
 COPY --from=builder /data/dist/TwitchChannelPointsMiner \
   /app/TwitchChannelPointsMiner
-# copy the trusted CA certificates (don't exist & not installable via apt in scratch image)
+# copy the trusted CA certificates (not installable via apt in a scratch image)
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt \
   /etc/ssl/certs/
-# copy data folder with correct permissions (we cant create due to scratch image)
-COPY --from=builder --chmod=2700 \
+# prepare the data folder for the non-root runtime user (scratch cannot mkdir)
+COPY --from=builder --chown=10001:10001 \
   /data/dist/data_folder /app/data
 
 WORKDIR /app
-ENV TCPM_DATA_DIR=/app/data
+# The image is the unit of update, so the in-container updater stays off.
+ENV TCPM_DATA_DIR=/app/data \
+  TCPM_AUTO_UPDATE=false
 
-# starting the binary
+USER 10001:10001
 ENTRYPOINT [ "/app/TwitchChannelPointsMiner" ]

@@ -136,9 +136,24 @@ This is what the Docker setup uses. See [Docker](#docker), `docker-compose.yml`,
 
 ## Docker
 
-The two-stage `Dockerfile` builds a static binary and runs it on `scratch`. The final image has no shell or package manager, runs as root, and stores its data under `/app/data`. Compose builds `tcpm:latest` and persists cookies in the named volume `tcpm-twitch-cookies`.
+The two-stage `Dockerfile` cross-compiles a static binary and runs it on `scratch`. The final image has no shell or package manager, runs as the non-root UID/GID `10001`, and keeps all persistent data under `/app/data`. Auto-update is disabled inside the image; the image itself is the unit of update.
 
-### Quick start
+A multi-arch image (`linux/amd64`, `linux/arm64`) is built by `.github/workflows/docker.yml` and published to the GitHub Container Registry (GHCR). Pushes to `main` publish `latest`, pushes to the `docker` branch publish `docker`, and version tags publish semver tags. Pull requests only build the image, without publishing it. Branch builds also carry a `sha-<commit>` tag, so a branch can be tested before it is merged into `main`.
+
+### Quick start (prebuilt image)
+
+Replace `jadebi` with the GitHub account that owns the fork publishing the image:
+
+```bash
+cp .env.example .env      # set TCPM_USERNAME
+docker pull ghcr.io/jadebi/twitch-channel-points-miner:latest
+docker compose up -d --no-build
+docker compose logs -f tcpm
+```
+
+If anonymous `docker pull` is denied, the package is private: either make it public in its package settings (`Profile -> Packages -> twitch-channel-points-miner -> Package settings`) or use `docker login ghcr.io` with a token that has `read:packages`.
+
+Or build the image locally instead of pulling it:
 
 ```bash
 cp .env.example .env      # set TCPM_USERNAME
@@ -146,13 +161,13 @@ docker compose up -d --build
 docker compose logs -f tcpm
 ```
 
-Enter the device code from the logs on first start. `docker compose down` removes the container; `docker compose down -v` also deletes the cookies volume.
+Enter the device code from the logs on first start. `docker compose down` removes the container; `docker compose down -v` also deletes the `tcpm-twitch-data` volume (config, cookies and logs).
 
 ### Configuration
 
 Compose reads `TCPM_USERNAME` from `.env`, but only forwards the variables in its `environment:` block. To use more `TCPM_*` variables, uncomment `env_file: .env`; `environment:` overwrites variables from `env_file:`. Env overrides are runtime-only and are not saved to `config.json`.
 
-Cookies are persisted by default. `config.json`, logs, and the watch-streak cache are lost when the container is recreated. To keep everything, mount `/app/data`:
+Everything the miner writes lives in `/app/data` (`config.json`, `cookies/`, `log/` and the watch-streak cache), and that directory is persisted in the named volume `tcpm-twitch-data`. The container runs as UID/GID `10001`; for a bind mount, make the host directory writable by that UID first:
 
 ```yaml
 services:
@@ -161,7 +176,16 @@ services:
       - ./tcpm-data:/app/data
 ```
 
-The default container runs as root, so it can write to the bind mount. If you switch to `user: "10001:10001"`, chown `tcpm-data` to that UID first or you will have file system permission issues.
+```bash
+mkdir -p tcpm-data && sudo chown -R 10001:10001 tcpm-data
+```
+
+Upgrading from the old `cookies:/app/data/cookies` layout: the old `tcpm-twitch-cookies` volume is no longer used. Either remove it and log in once, or copy the cookie files into the new volume before starting:
+
+```bash
+docker run --rm -v tcpm-twitch-cookies:/old:ro -v tcpm-twitch-data:/new \
+  alpine sh -c 'mkdir -p /new/cookies && cp -a /old/. /new/cookies/ && chown -R 10001:10001 /new'
+```
 
 ### Build and update
 
@@ -169,14 +193,15 @@ The default container runs as root, so it can write to the bind mount. If you sw
 docker build -t tcpm:latest .          # or: docker compose build
 docker run -d --name tcpm \
   -e TCPM_USERNAME=your-twitch-username \
-  -e TCPM_AUTO_UPDATE=false \
-  -v tcpm-cookies:/app/data/cookies \
+  -v tcpm-twitch-data:/app/data \
   tcpm:latest
 ```
 
-To update, pull the git repo and rebuild: `git pull && docker compose build --pull && docker compose up -d`. The in-container updater is disabled because changes to the container disappear when it is recreated.
+The workflow builds `linux/amd64` and `linux/arm64` with Buildx; a local `docker build` produces the image for the current platform.
 
-The image has no shell, so `docker exec` will not work; use `docker logs` and `docker cp` instead. 
+To update, pull the new image (`docker compose pull && docker compose up -d`) or rebuild from a fresh checkout (`git pull && docker compose build --pull && docker compose up -d`). The in-container updater is disabled because changes to the container disappear when it is recreated.
+
+The image has no shell, so `docker exec` will not work; use `docker logs` and `docker cp` instead.
 
 ## Notes
 - Requires Go 1.22+; dependencies are in `go.mod`.
